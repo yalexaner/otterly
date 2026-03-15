@@ -6,9 +6,10 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-// reply sends a text message to the chat.
+// reply sends a text reply to the message that triggered it.
 func (b *Bot) reply(msg *tgbotapi.Message, text string) {
 	r := tgbotapi.NewMessage(msg.Chat.ID, text)
+	r.ReplyToMessageID = msg.MessageID
 	if _, err := b.api.Send(r); err != nil {
 		log.Printf("failed to send reply: %v", err)
 	}

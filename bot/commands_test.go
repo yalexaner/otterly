@@ -12,10 +12,11 @@ import (
 	"github.com/yalexaner/otterly/config"
 )
 
-// capturedMessage holds the chat_id and text from a sendMessage request.
+// capturedMessage holds the chat_id, text, and reply target from a sendMessage request.
 type capturedMessage struct {
-	ChatID int64
-	Text   string
+	ChatID           int64
+	Text             string
+	ReplyToMessageID int
 }
 
 // newCaptureServer creates a fake Telegram API server that records sendMessage calls.
@@ -39,7 +40,8 @@ func newCaptureServer(t *testing.T) (*httptest.Server, *[]capturedMessage) {
 			r.ParseForm()
 			chatID, _ := strconv.ParseInt(r.FormValue("chat_id"), 10, 64)
 			text := r.FormValue("text")
-			captured = append(captured, capturedMessage{ChatID: chatID, Text: text})
+			replyTo, _ := strconv.Atoi(r.FormValue("reply_to_message_id"))
+			captured = append(captured, capturedMessage{ChatID: chatID, Text: text, ReplyToMessageID: replyTo})
 
 			json.NewEncoder(w).Encode(map[string]any{
 				"ok": true,
@@ -84,8 +86,9 @@ func commandMessage(chatID int64, text string) *tgbotapi.Message {
 		}
 	}
 	return &tgbotapi.Message{
-		Chat: &tgbotapi.Chat{ID: chatID},
-		Text: text,
+		MessageID: 50,
+		Chat:      &tgbotapi.Chat{ID: chatID},
+		Text:      text,
 		Entities: []tgbotapi.MessageEntity{
 			{Type: "bot_command", Offset: 0, Length: cmdLen},
 		},
