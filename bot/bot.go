@@ -50,6 +50,7 @@ func (b *Bot) Start() {
 
 		if update.Message.IsCommand() {
 			log.Printf("[command] %s from user %d", update.Message.Command(), update.Message.From.ID)
+			b.handleCommand(update.Message)
 		} else if update.Message.Voice != nil {
 			log.Printf("[voice] from user %d, duration %ds", update.Message.From.ID, update.Message.Voice.Duration)
 		} else if update.Message.Text != "" {
