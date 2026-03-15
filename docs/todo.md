@@ -6,9 +6,9 @@ Build order is intentional: core value first (voice transcription), then auth, t
 
 ## Phase 1 — Voice Pipeline (the thing that matters)
 
-- [ ] Set up project structure, dependencies, .env loading
-- [ ] Telegram bot polling loop — receive updates, log message types
-- [ ] `/start` and `/help` commands with static Russian responses
+- [x] Set up project structure, dependencies, .env loading
+- [x] Telegram bot polling loop — receive updates, log message types
+- [x] `/start` and `/help` commands with static Russian responses
 - [ ] Download voice message OGG file from Telegram
 - [ ] Convert OGG → WAV PCM 16 kHz mono via ffmpeg
 - [ ] ElevenLabs transcription client (multipart upload, Russian)
