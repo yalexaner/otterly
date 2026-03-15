@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/joho/godotenv"
 )
@@ -11,7 +12,7 @@ import (
 // Config holds all required environment variables for the bot.
 type Config struct {
 	TelegramBotToken string
-	TelegramAdminID  string
+	TelegramAdminID  int64
 	ElevenLabsAPIKey string
 }
 
@@ -25,18 +26,19 @@ func Load() (Config, error) {
 
 	cfg := Config{
 		TelegramBotToken: os.Getenv("TELEGRAM_BOT_TOKEN"),
-		TelegramAdminID:  os.Getenv("TELEGRAM_ADMIN_ID"),
 		ElevenLabsAPIKey: os.Getenv("ELEVENLABS_API_KEY"),
 	}
 
 	if cfg.TelegramBotToken == "" {
 		return Config{}, fmt.Errorf("TELEGRAM_BOT_TOKEN is required but not set")
 	}
-	if cfg.TelegramAdminID == "" {
-		return Config{}, fmt.Errorf("TELEGRAM_ADMIN_ID is required but not set")
-	}
-	if cfg.ElevenLabsAPIKey == "" {
-		return Config{}, fmt.Errorf("ELEVENLABS_API_KEY is required but not set")
+
+	if raw := os.Getenv("TELEGRAM_ADMIN_ID"); raw != "" {
+		id, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			return Config{}, fmt.Errorf("TELEGRAM_ADMIN_ID must be a valid integer: %w", err)
+		}
+		cfg.TelegramAdminID = id
 	}
 
 	return cfg, nil

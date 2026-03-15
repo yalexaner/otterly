@@ -23,7 +23,7 @@ func TestNew_ValidToken(t *testing.T) {
 
 	cfg := config.Config{
 		TelegramBotToken: "fake-token",
-		TelegramAdminID:  "12345",
+		TelegramAdminID:  12345,
 		ElevenLabsAPIKey: "el-key",
 	}
 
@@ -52,7 +52,7 @@ func TestNew_InvalidToken(t *testing.T) {
 
 	cfg := config.Config{
 		TelegramBotToken: "bad-token",
-		TelegramAdminID:  "12345",
+		TelegramAdminID:  12345,
 		ElevenLabsAPIKey: "el-key",
 	}
 

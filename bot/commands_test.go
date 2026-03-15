@@ -63,7 +63,7 @@ func newTestBotWithCapture(t *testing.T, server *httptest.Server) *Bot {
 	t.Helper()
 	cfg := config.Config{
 		TelegramBotToken: "fake-token",
-		TelegramAdminID:  "12345",
+		TelegramAdminID:  12345,
 		ElevenLabsAPIKey: "el-key",
 	}
 	b, err := newWithEndpoint(cfg, server.URL+"/bot%s/%s")
