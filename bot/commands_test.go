@@ -301,3 +301,114 @@ func TestHandleStart_TokenAlreadyAuthorized(t *testing.T) {
 		t.Errorf("token should still be redeemable, got: %v", err)
 	}
 }
+
+func TestHandleAllow_AdminSuccess(t *testing.T) {
+	server, captured := newCaptureServer(t)
+	defer server.Close()
+	s := openTestStore(t)
+	defer s.Close()
+
+	b := newTestBotWithStore(t, server, s)
+	msg := commandMessage(42, 12345, "/allow 99999")
+	b.handleCommand(msg)
+
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 sent message, got %d", len(*captured))
+	}
+	want := "Пользователь 99999 добавлен."
+	if (*captured)[0].Text != want {
+		t.Errorf("text = %q, want %q", (*captured)[0].Text, want)
+	}
+
+	// verify user is now active in the store
+	active, err := s.IsActive(99999)
+	if err != nil {
+		t.Fatalf("IsActive error: %v", err)
+	}
+	if !active {
+		t.Error("user should be active after /allow")
+	}
+}
+
+func TestHandleAllow_NonAdmin(t *testing.T) {
+	server, captured := newCaptureServer(t)
+	defer server.Close()
+	s := openTestStore(t)
+	defer s.Close()
+
+	// allow user 99999 so they pass the auth gate, but they are NOT admin
+	if err := s.AllowUser(99999, 12345); err != nil {
+		t.Fatalf("failed to allow user: %v", err)
+	}
+
+	b := newTestBotWithStore(t, server, s)
+	msg := commandMessage(42, 99999, "/allow 12345")
+	b.handleCommand(msg)
+
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 sent message, got %d", len(*captured))
+	}
+	want := "Эта команда не поддерживается."
+	if (*captured)[0].Text != want {
+		t.Errorf("text = %q, want %q", (*captured)[0].Text, want)
+	}
+}
+
+func TestHandleAllow_NoArg(t *testing.T) {
+	server, captured := newCaptureServer(t)
+	defer server.Close()
+	s := openTestStore(t)
+	defer s.Close()
+
+	b := newTestBotWithStore(t, server, s)
+	msg := commandMessage(42, 12345, "/allow")
+	b.handleCommand(msg)
+
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 sent message, got %d", len(*captured))
+	}
+	want := "Использование: /allow <telegram_user_id>"
+	if (*captured)[0].Text != want {
+		t.Errorf("text = %q, want %q", (*captured)[0].Text, want)
+	}
+}
+
+func TestHandleAllow_InvalidFormat(t *testing.T) {
+	server, captured := newCaptureServer(t)
+	defer server.Close()
+	s := openTestStore(t)
+	defer s.Close()
+
+	b := newTestBotWithStore(t, server, s)
+	msg := commandMessage(42, 12345, "/allow abc")
+	b.handleCommand(msg)
+
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 sent message, got %d", len(*captured))
+	}
+	want := "Неверный формат ID. Укажите числовой Telegram ID."
+	if (*captured)[0].Text != want {
+		t.Errorf("text = %q, want %q", (*captured)[0].Text, want)
+	}
+}
+
+func TestHandleAllow_StoreError(t *testing.T) {
+	server, captured := newCaptureServer(t)
+	defer server.Close()
+	s := openTestStore(t)
+
+	// close the store to force an error
+	s.Close()
+
+	b := newTestBotWithStore(t, server, s)
+	msg := commandMessage(42, 12345, "/allow 99999")
+	b.handleCommand(msg)
+
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 sent message, got %d", len(*captured))
+	}
+	want := "Ошибка при добавлении пользователя."
+	if (*captured)[0].Text != want {
+		t.Errorf("text = %q, want %q", (*captured)[0].Text, want)
+	}
+}

@@ -2,7 +2,9 @@ package bot
 
 import (
 	"errors"
+	"fmt"
 	"log"
+	"strconv"
 	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -61,6 +63,34 @@ func (b *Bot) handleStart(msg *tgbotapi.Message) {
 	b.reply(msg, "Добро пожаловать! Теперь вы можете отправлять голосовые сообщения.")
 }
 
+// handleAllow handles the /allow command to add a user to the whitelist.
+func (b *Bot) handleAllow(msg *tgbotapi.Message) {
+	if !b.isAdmin(msg.From.ID) {
+		b.reply(msg, "Эта команда не поддерживается.")
+		return
+	}
+
+	arg := strings.TrimSpace(msg.CommandArguments())
+	if arg == "" {
+		b.reply(msg, "Использование: /allow <telegram_user_id>")
+		return
+	}
+
+	userID, err := strconv.ParseInt(arg, 10, 64)
+	if err != nil {
+		b.reply(msg, "Неверный формат ID. Укажите числовой Telegram ID.")
+		return
+	}
+
+	if err := b.store.AllowUser(userID, msg.From.ID); err != nil {
+		log.Printf("failed to allow user %d: %v", userID, err)
+		b.reply(msg, "Ошибка при добавлении пользователя.")
+		return
+	}
+
+	b.reply(msg, fmt.Sprintf("Пользователь %d добавлен.", userID))
+}
+
 // handleCommand dispatches the command to the appropriate handler.
 func (b *Bot) handleCommand(msg *tgbotapi.Message) {
 	switch msg.Command() {
@@ -68,6 +98,8 @@ func (b *Bot) handleCommand(msg *tgbotapi.Message) {
 		b.handleStart(msg)
 	case "help":
 		b.reply(msg, "Отправьте голосовое сообщение, и бот вернёт текстовую расшифровку.")
+	case "allow":
+		b.handleAllow(msg)
 	default:
 		b.reply(msg, "Эта команда не поддерживается.")
 	}
