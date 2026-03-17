@@ -93,11 +93,11 @@ func newVoiceServer(t *testing.T, opts voiceServerOpts) (*httptest.Server, *[]ca
 }
 
 // voiceMessage builds a message with a Voice attachment.
-func voiceMessage(chatID int64, fileID string) *tgbotapi.Message {
+func voiceMessage(chatID int64, fileID string, duration int) *tgbotapi.Message {
 	return &tgbotapi.Message{
 		MessageID: 100,
 		Chat:      &tgbotapi.Chat{ID: chatID},
-		Voice:     &tgbotapi.Voice{FileID: fileID, Duration: 5},
+		Voice:     &tgbotapi.Voice{FileID: fileID, Duration: duration},
 	}
 }
 
@@ -107,7 +107,7 @@ func TestHandleVoice_Success(t *testing.T) {
 	defer server.Close()
 
 	b := newTestBotWithCapture(t, server)
-	msg := voiceMessage(42, "test-file-id")
+	msg := voiceMessage(42, "test-file-id", 5)
 
 	path, err := b.handleVoice(msg)
 	if err != nil {
@@ -151,7 +151,7 @@ func TestHandleVoice_GetFileError(t *testing.T) {
 	defer server.Close()
 
 	b := newTestBotWithCapture(t, server)
-	msg := voiceMessage(42, "test-file-id")
+	msg := voiceMessage(42, "test-file-id", 5)
 
 	path, err := b.handleVoice(msg)
 	if err == nil {
@@ -175,7 +175,7 @@ func TestHandleVoice_DownloadError(t *testing.T) {
 	defer server.Close()
 
 	b := newTestBotWithCapture(t, server)
-	msg := voiceMessage(42, "test-file-id")
+	msg := voiceMessage(42, "test-file-id", 5)
 
 	path, err := b.handleVoice(msg)
 	if err == nil {
@@ -191,5 +191,71 @@ func TestHandleVoice_DownloadError(t *testing.T) {
 	}
 	if (*captured)[0].Text != "Не удалось загрузить голосовое сообщение." {
 		t.Errorf("reply = %q, want error message", (*captured)[0].Text)
+	}
+}
+
+func TestHandleVoice_TooLong(t *testing.T) {
+	server, captured := newCaptureServer(t)
+	defer server.Close()
+
+	b := newTestBotWithCapture(t, server)
+	msg := voiceMessage(42, "test-file-id", 91)
+
+	path, err := b.handleVoice(msg)
+	if err == nil {
+		t.Fatal("expected error for voice >90s, got nil")
+	}
+	if path != "" {
+		t.Errorf("expected empty path, got %q", path)
+	}
+	if !strings.Contains(err.Error(), "too long") {
+		t.Errorf("error = %q, want it to contain 'too long'", err)
+	}
+
+	// verify rejection reply was sent
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 reply, got %d", len(*captured))
+	}
+	want := "Сообщение слишком длинное (более 90 секунд)."
+	if (*captured)[0].Text != want {
+		t.Errorf("reply = %q, want %q", (*captured)[0].Text, want)
+	}
+	if (*captured)[0].ChatID != 42 {
+		t.Errorf("reply chat ID = %d, want 42", (*captured)[0].ChatID)
+	}
+	if (*captured)[0].ReplyToMessageID != 100 {
+		t.Errorf("reply_to_message_id = %d, want 100", (*captured)[0].ReplyToMessageID)
+	}
+}
+
+func TestHandleVoice_ExactLimit(t *testing.T) {
+	fakeOGG := []byte("fake-ogg-data")
+	server, captured := newVoiceServer(t, voiceServerOpts{fileContent: fakeOGG})
+	defer server.Close()
+
+	b := newTestBotWithCapture(t, server)
+	msg := voiceMessage(42, "test-file-id", 90)
+
+	path, err := b.handleVoice(msg)
+	if err != nil {
+		t.Fatalf("expected no error for 90s voice, got: %v", err)
+	}
+	defer os.Remove(path)
+
+	// verify file was downloaded (not rejected)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read temp file: %v", err)
+	}
+	if string(data) != string(fakeOGG) {
+		t.Errorf("file content = %q, want %q", data, fakeOGG)
+	}
+
+	// verify confirmation reply (not rejection)
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 reply, got %d", len(*captured))
+	}
+	if (*captured)[0].Text != "Голосовое сообщение получено." {
+		t.Errorf("reply = %q, want confirmation message", (*captured)[0].Text)
 	}
 }

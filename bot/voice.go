@@ -18,6 +18,12 @@ var httpClient = &http.Client{Timeout: 30 * time.Second}
 // and returns the path to the downloaded file. the caller is responsible for
 // cleaning up the temp file.
 func (b *Bot) handleVoice(msg *tgbotapi.Message) (string, error) {
+	// reject voice messages longer than 90 seconds
+	if msg.Voice.Duration > 90 {
+		b.reply(msg, "Сообщение слишком длинное (более 90 секунд).")
+		return "", fmt.Errorf("voice too long: %ds", msg.Voice.Duration)
+	}
+
 	// get file metadata from Telegram
 	file, err := b.api.GetFile(tgbotapi.FileConfig{FileID: msg.Voice.FileID})
 	if err != nil {
