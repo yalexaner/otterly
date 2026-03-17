@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/yalexaner/otterly/audio"
 	"github.com/yalexaner/otterly/config"
 )
 
@@ -14,6 +15,7 @@ type Bot struct {
 	api          *tgbotapi.BotAPI
 	cfg          config.Config
 	fileEndpoint string
+	convertToWAV func(string) (string, error)
 }
 
 // New creates a new Bot instance using the provided config.
@@ -38,6 +40,7 @@ func newWithEndpoint(cfg config.Config, apiEndpoint string) (*Bot, error) {
 		api:          api,
 		cfg:          cfg,
 		fileEndpoint: fileEndpoint,
+		convertToWAV: audio.ConvertToWAV,
 	}, nil
 }
 
@@ -64,9 +67,9 @@ func (b *Bot) Start() {
 				continue
 			}
 			log.Printf("[voice] from user %d, duration %ds", update.Message.From.ID, update.Message.Voice.Duration)
-			// clean up temp file until a downstream consumer (e.g., transcription) is added
-			if path, err := b.handleVoice(update.Message); err == nil {
-				os.Remove(path)
+			// clean up WAV temp file until a downstream consumer (e.g., transcription) is added
+			if wavPath, err := b.handleVoice(update.Message); err == nil {
+				os.Remove(wavPath)
 			}
 		} else if update.Message.Text != "" {
 			log.Printf("[text] from user %d", update.Message.From.ID)
