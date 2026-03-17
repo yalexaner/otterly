@@ -7,9 +7,11 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/yalexaner/otterly/config"
+	"github.com/yalexaner/otterly/store"
 )
 
 // capturedMessage holds the chat_id, text, and reply target from a sendMessage request.
@@ -75,8 +77,23 @@ func newTestBotWithCapture(t *testing.T, server *httptest.Server) *Bot {
 	return b
 }
 
+// newTestBotWithStore creates a bot connected to the capture server with a real store.
+func newTestBotWithStore(t *testing.T, server *httptest.Server, s *store.Store) *Bot {
+	t.Helper()
+	cfg := config.Config{
+		TelegramBotToken: "fake-token",
+		TelegramAdminID:  12345,
+		ElevenLabsAPIKey: "el-key",
+	}
+	b, err := newWithEndpoint(cfg, s, server.URL+"/bot%s/%s")
+	if err != nil {
+		t.Fatalf("failed to create test bot: %v", err)
+	}
+	return b
+}
+
 // commandMessage builds a message that looks like a bot command.
-func commandMessage(chatID int64, text string) *tgbotapi.Message {
+func commandMessage(chatID int64, userID int64, text string) *tgbotapi.Message {
 	// find command length (from / to first space or end of string)
 	cmdLen := len(text)
 	for i, c := range text {
@@ -87,6 +104,7 @@ func commandMessage(chatID int64, text string) *tgbotapi.Message {
 	}
 	return &tgbotapi.Message{
 		MessageID: 50,
+		From:      &tgbotapi.User{ID: userID},
 		Chat:      &tgbotapi.Chat{ID: chatID},
 		Text:      text,
 		Entities: []tgbotapi.MessageEntity{
@@ -100,7 +118,7 @@ func TestHandleCommand_Start(t *testing.T) {
 	defer server.Close()
 	b := newTestBotWithCapture(t, server)
 
-	msg := commandMessage(42, "/start")
+	msg := commandMessage(42, 12345, "/start")
 	b.handleCommand(msg)
 
 	if len(*captured) != 1 {
@@ -120,7 +138,7 @@ func TestHandleCommand_Help(t *testing.T) {
 	defer server.Close()
 	b := newTestBotWithCapture(t, server)
 
-	msg := commandMessage(99, "/help")
+	msg := commandMessage(99, 12345, "/help")
 	b.handleCommand(msg)
 
 	if len(*captured) != 1 {
@@ -140,7 +158,7 @@ func TestHandleCommand_Unknown(t *testing.T) {
 	defer server.Close()
 	b := newTestBotWithCapture(t, server)
 
-	msg := commandMessage(7, "/foo")
+	msg := commandMessage(7, 12345, "/foo")
 	b.handleCommand(msg)
 
 	if len(*captured) != 1 {
@@ -152,5 +170,134 @@ func TestHandleCommand_Unknown(t *testing.T) {
 	}
 	if (*captured)[0].ChatID != 7 {
 		t.Errorf("chat ID = %d, want 7", (*captured)[0].ChatID)
+	}
+}
+
+func TestHandleStart_AuthorizedUser(t *testing.T) {
+	server, captured := newCaptureServer(t)
+	defer server.Close()
+	s := openTestStore(t)
+	defer s.Close()
+
+	// admin user is always authorized
+	b := newTestBotWithStore(t, server, s)
+	msg := commandMessage(42, 12345, "/start")
+	b.handleCommand(msg)
+
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 sent message, got %d", len(*captured))
+	}
+	want := "Добро пожаловать! Отправь голосовое сообщение, и я пришлю текст."
+	if (*captured)[0].Text != want {
+		t.Errorf("text = %q, want %q", (*captured)[0].Text, want)
+	}
+}
+
+func TestHandleStart_UnauthorizedUser(t *testing.T) {
+	server, captured := newCaptureServer(t)
+	defer server.Close()
+	s := openTestStore(t)
+	defer s.Close()
+
+	b := newTestBotWithStore(t, server, s)
+	msg := commandMessage(42, 99999, "/start")
+	b.handleCommand(msg)
+
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 sent message, got %d", len(*captured))
+	}
+	want := "У вас нет доступа. Обратитесь к администратору."
+	if (*captured)[0].Text != want {
+		t.Errorf("text = %q, want %q", (*captured)[0].Text, want)
+	}
+}
+
+func TestHandleStart_ValidToken_Unauthorized(t *testing.T) {
+	server, captured := newCaptureServer(t)
+	defer server.Close()
+	s := openTestStore(t)
+	defer s.Close()
+
+	// create an invite token
+	token := "test-valid-token-1234"
+	if err := s.CreateInvite(token, 12345, time.Now().Add(store.DefaultInviteTTL)); err != nil {
+		t.Fatalf("failed to create invite: %v", err)
+	}
+
+	b := newTestBotWithStore(t, server, s)
+	msg := commandMessage(42, 99999, "/start "+token)
+	b.handleCommand(msg)
+
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 sent message, got %d", len(*captured))
+	}
+	want := "Добро пожаловать! Теперь вы можете отправлять голосовые сообщения."
+	if (*captured)[0].Text != want {
+		t.Errorf("text = %q, want %q", (*captured)[0].Text, want)
+	}
+
+	// verify user is now active
+	active, err := s.IsActive(99999)
+	if err != nil {
+		t.Fatalf("IsActive error: %v", err)
+	}
+	if !active {
+		t.Error("user should be active after redeeming invite")
+	}
+}
+
+func TestHandleStart_InvalidToken(t *testing.T) {
+	server, captured := newCaptureServer(t)
+	defer server.Close()
+	s := openTestStore(t)
+	defer s.Close()
+
+	b := newTestBotWithStore(t, server, s)
+	msg := commandMessage(42, 99999, "/start bad-token")
+	b.handleCommand(msg)
+
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 sent message, got %d", len(*captured))
+	}
+	want := "Недействительная или просроченная ссылка."
+	if (*captured)[0].Text != want {
+		t.Errorf("text = %q, want %q", (*captured)[0].Text, want)
+	}
+}
+
+func TestHandleStart_TokenAlreadyAuthorized(t *testing.T) {
+	server, captured := newCaptureServer(t)
+	defer server.Close()
+	s := openTestStore(t)
+	defer s.Close()
+
+	// create an invite token
+	token := "test-token-not-consumed"
+	if err := s.CreateInvite(token, 12345, time.Now().Add(store.DefaultInviteTTL)); err != nil {
+		t.Fatalf("failed to create invite: %v", err)
+	}
+
+	// allow the user first
+	if err := s.AllowUser(99999, 12345); err != nil {
+		t.Fatalf("failed to allow user: %v", err)
+	}
+
+	b := newTestBotWithStore(t, server, s)
+	msg := commandMessage(42, 99999, "/start "+token)
+	b.handleCommand(msg)
+
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 sent message, got %d", len(*captured))
+	}
+	// authorized user gets welcome, token not consumed
+	want := "Добро пожаловать! Отправь голосовое сообщение, и я пришлю текст."
+	if (*captured)[0].Text != want {
+		t.Errorf("text = %q, want %q", (*captured)[0].Text, want)
+	}
+
+	// verify token was NOT consumed (used_by should be NULL)
+	// redeem it again to prove it's still valid
+	if err := s.RedeemInvite(token, 88888, "another_user"); err != nil {
+		t.Errorf("token should still be redeemable, got: %v", err)
 	}
 }

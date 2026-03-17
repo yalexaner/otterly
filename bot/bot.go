@@ -49,6 +49,30 @@ func newWithEndpoint(cfg config.Config, s *store.Store, apiEndpoint string) (*Bo
 	}, nil
 }
 
+// isAdmin returns true if the given user ID matches the configured admin.
+// Returns false when admin ID is 0 (not configured).
+func (b *Bot) isAdmin(userID int64) bool {
+	return b.cfg.TelegramAdminID != 0 && userID == b.cfg.TelegramAdminID
+}
+
+// isAuthorized returns true if the user is allowed to use the bot.
+// Admin always passes. If store is nil, everyone is authorized (fallback).
+// Otherwise checks the store for active status.
+func (b *Bot) isAuthorized(userID int64) bool {
+	if b.isAdmin(userID) {
+		return true
+	}
+	if b.store == nil {
+		return true
+	}
+	active, err := b.store.IsActive(userID)
+	if err != nil {
+		log.Printf("auth check failed for user %d: %v", userID, err)
+		return false
+	}
+	return active
+}
+
 // Start begins the long-polling loop, receiving and dispatching updates.
 func (b *Bot) Start() {
 	u := tgbotapi.NewUpdate(0)
@@ -61,6 +85,14 @@ func (b *Bot) Start() {
 	for update := range updates {
 		if update.Message == nil || update.Message.From == nil {
 			continue
+		}
+
+		// /start handles auth internally (invite redemption flow)
+		if !update.Message.IsCommand() || update.Message.Command() != "start" {
+			if !b.isAuthorized(update.Message.From.ID) {
+				b.reply(update.Message, "У вас нет доступа.")
+				continue
+			}
 		}
 
 		if update.Message.IsCommand() {
