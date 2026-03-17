@@ -67,7 +67,7 @@ func (c *Client) doTranscribe(bodyBytes []byte, contentType string) (string, err
 	if err != nil {
 		return "", fmt.Errorf("send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 500 {
 		respBody, _ := io.ReadAll(resp.Body)
@@ -120,7 +120,7 @@ func (c *Client) buildMultipartRequest(wavPath string) (*bytes.Buffer, string, e
 	if err != nil {
 		return nil, "", fmt.Errorf("open wav file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)

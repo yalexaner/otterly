@@ -56,9 +56,9 @@ func TestConvertToWAV_Success(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	input.Write([]byte("fake-ogg-data"))
-	input.Close()
-	defer os.Remove(input.Name())
+	_, _ = input.Write([]byte("fake-ogg-data"))
+	_ = input.Close()
+	defer func() { _ = os.Remove(input.Name()) }()
 
 	origExecCommand := execCommandContext
 	execCommandContext = fakeExecCommand("success")
@@ -68,7 +68,7 @@ func TestConvertToWAV_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
-	defer os.Remove(outputPath)
+	defer func() { _ = os.Remove(outputPath) }()
 
 	data, err := os.ReadFile(outputPath)
 	if err != nil {
@@ -89,7 +89,7 @@ func TestConvertToWAV_InputNotFound(t *testing.T) {
 		t.Fatal("expected error for missing input, got nil")
 	}
 	if outputPath != "" {
-		os.Remove(outputPath)
+		_ = os.Remove(outputPath)
 		t.Errorf("expected empty output path, got %q", outputPath)
 	}
 	if !strings.Contains(err.Error(), "input file") {
@@ -102,9 +102,9 @@ func TestConvertToWAV_FfmpegFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	input.Write([]byte("fake-ogg-data"))
-	input.Close()
-	defer os.Remove(input.Name())
+	_, _ = input.Write([]byte("fake-ogg-data"))
+	_ = input.Close()
+	defer func() { _ = os.Remove(input.Name()) }()
 
 	origExecCommand := execCommandContext
 	execCommandContext = fakeExecCommand("fail")
@@ -115,7 +115,7 @@ func TestConvertToWAV_FfmpegFails(t *testing.T) {
 		t.Fatal("expected error when ffmpeg fails, got nil")
 	}
 	if outputPath != "" {
-		os.Remove(outputPath)
+		_ = os.Remove(outputPath)
 		t.Errorf("expected empty output path, got %q", outputPath)
 	}
 	if !strings.Contains(err.Error(), "ffmpeg") {

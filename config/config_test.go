@@ -11,7 +11,7 @@ func clearEnv(t *testing.T) {
 	t.Helper()
 	for _, k := range []string{"TELEGRAM_BOT_TOKEN", "TELEGRAM_ADMIN_ID", "ELEVENLABS_API_KEY", "DATABASE_PATH"} {
 		t.Setenv(k, "")
-		os.Unsetenv(k)
+		_ = os.Unsetenv(k)
 	}
 }
 

@@ -32,7 +32,7 @@ func TestIsAuthorized_ActiveUserTrue(t *testing.T) {
 	defer server.Close()
 
 	s := openTestStore(t)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	if err := s.AllowUser(99999, 12345); err != nil {
 		t.Fatalf("failed to allow user: %v", err)
@@ -58,7 +58,7 @@ func TestIsAuthorized_BlockedUserFalse(t *testing.T) {
 	defer server.Close()
 
 	s := openTestStore(t)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	if err := s.AllowUser(99999, 12345); err != nil {
 		t.Fatalf("failed to allow user: %v", err)
@@ -87,7 +87,7 @@ func TestIsAuthorized_NonexistentUserFalse(t *testing.T) {
 	defer server.Close()
 
 	s := openTestStore(t)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	cfg := config.Config{
 		TelegramBotToken: "fake-token",

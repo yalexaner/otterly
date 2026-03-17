@@ -16,7 +16,7 @@ func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"ok":true,"result":{"id":123,"is_bot":true,"first_name":"TestBot","username":"test_bot"}}`))
+		_, _ = w.Write([]byte(`{"ok":true,"result":{"id":123,"is_bot":true,"first_name":"TestBot","username":"test_bot"}}`))
 	}))
 }
 
@@ -49,7 +49,7 @@ func TestNew_InvalidToken(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
-		w.Write([]byte(`{"ok":false,"error_code":401,"description":"Unauthorized"}`))
+		_, _ = w.Write([]byte(`{"ok":false,"error_code":401,"description":"Unauthorized"}`))
 	}))
 	defer server.Close()
 
@@ -84,7 +84,7 @@ func newSetMyCommandsCaptureServer(t *testing.T) (*httptest.Server, *[]capturedS
 
 		switch {
 		case strings.HasSuffix(r.URL.Path, "getMe"):
-			json.NewEncoder(w).Encode(map[string]any{
+			_ = json.NewEncoder(w).Encode(map[string]any{
 				"ok": true,
 				"result": map[string]any{
 					"id": 123, "is_bot": true,
@@ -92,20 +92,20 @@ func newSetMyCommandsCaptureServer(t *testing.T) (*httptest.Server, *[]capturedS
 				},
 			})
 		case strings.HasSuffix(r.URL.Path, "setMyCommands"):
-			r.ParseForm()
+			_ = r.ParseForm()
 			var cmds []tgbotapi.BotCommand
 			if raw := r.FormValue("commands"); raw != "" {
-				json.Unmarshal([]byte(raw), &cmds)
+				_ = json.Unmarshal([]byte(raw), &cmds)
 			}
 			var scope *tgbotapi.BotCommandScope
 			if raw := r.FormValue("scope"); raw != "" {
 				scope = &tgbotapi.BotCommandScope{}
-				json.Unmarshal([]byte(raw), scope)
+				_ = json.Unmarshal([]byte(raw), scope)
 			}
 			captured = append(captured, capturedSetMyCommands{Commands: cmds, Scope: scope})
-			json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": true})
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": true})
 		default:
-			json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": map[string]any{}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": map[string]any{}})
 		}
 	}))
 

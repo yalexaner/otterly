@@ -53,7 +53,7 @@ func Open(path string) (*Store, error) {
 	}
 	for _, p := range pragmas {
 		if _, err := db.Exec(p); err != nil {
-			db.Close()
+			_ = db.Close()
 			return nil, fmt.Errorf("set pragma %q: %w", p, err)
 		}
 	}
@@ -172,7 +172,7 @@ func (s *Store) ListUsers() ([]User, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list users: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var users []User
 	for rows.Next() {
@@ -216,7 +216,7 @@ func (s *Store) RedeemInvite(token string, userID int64, username string) error 
 	if err != nil {
 		return fmt.Errorf("redeem invite begin: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	var expiresAt string
 	var usedBy sql.NullInt64

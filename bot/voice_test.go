@@ -31,7 +31,7 @@ func newVoiceServer(t *testing.T, opts voiceServerOpts) (*httptest.Server, *[]ca
 
 		switch {
 		case strings.HasSuffix(r.URL.Path, "getMe"):
-			json.NewEncoder(w).Encode(map[string]any{
+			_ = json.NewEncoder(w).Encode(map[string]any{
 				"ok": true,
 				"result": map[string]any{
 					"id": 123, "is_bot": true,
@@ -41,14 +41,14 @@ func newVoiceServer(t *testing.T, opts voiceServerOpts) (*httptest.Server, *[]ca
 
 		case strings.HasSuffix(r.URL.Path, "getFile"):
 			if opts.getFileErr {
-				json.NewEncoder(w).Encode(map[string]any{
+				_ = json.NewEncoder(w).Encode(map[string]any{
 					"ok":          false,
 					"error_code":  400,
 					"description": "Bad Request: file not found",
 				})
 				return
 			}
-			json.NewEncoder(w).Encode(map[string]any{
+			_ = json.NewEncoder(w).Encode(map[string]any{
 				"ok": true,
 				"result": map[string]any{
 					"file_id":        "test-file-id",
@@ -59,13 +59,13 @@ func newVoiceServer(t *testing.T, opts voiceServerOpts) (*httptest.Server, *[]ca
 			})
 
 		case strings.HasSuffix(r.URL.Path, "sendMessage"):
-			r.ParseForm()
+			_ = r.ParseForm()
 			chatID, _ := strconv.ParseInt(r.FormValue("chat_id"), 10, 64)
 			text := r.FormValue("text")
 			replyTo, _ := strconv.Atoi(r.FormValue("reply_to_message_id"))
 			captured = append(captured, capturedMessage{ChatID: chatID, Text: text, ReplyToMessageID: replyTo})
 
-			json.NewEncoder(w).Encode(map[string]any{
+			_ = json.NewEncoder(w).Encode(map[string]any{
 				"ok": true,
 				"result": map[string]any{
 					"message_id": 1,
@@ -79,14 +79,14 @@ func newVoiceServer(t *testing.T, opts voiceServerOpts) (*httptest.Server, *[]ca
 			if opts.fileDownloadStatus != 0 && opts.fileDownloadStatus != http.StatusOK {
 				w.Header().Set("Content-Type", "text/plain")
 				w.WriteHeader(opts.fileDownloadStatus)
-				w.Write([]byte("not found"))
+				_, _ = w.Write([]byte("not found"))
 				return
 			}
 			w.Header().Set("Content-Type", "audio/ogg")
-			w.Write(opts.fileContent)
+			_, _ = w.Write(opts.fileContent)
 
 		default:
-			json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": map[string]any{}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": map[string]any{}})
 		}
 	}))
 
@@ -122,8 +122,8 @@ func mockConverter(t *testing.T) func(string) (string, error) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		tmp.Write([]byte("fake-wav-data"))
-		tmp.Close()
+		_, _ = tmp.Write([]byte("fake-wav-data"))
+		_ = tmp.Close()
 		return tmp.Name(), nil
 	}
 }
@@ -142,8 +142,8 @@ func TestHandleVoice_Success(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		tmp.Write([]byte("fake-wav-data"))
-		tmp.Close()
+		_, _ = tmp.Write([]byte("fake-wav-data"))
+		_ = tmp.Close()
 		return tmp.Name(), nil
 	}
 	b.transcriber = &fakeTranscriber{text: "привет мир"}
@@ -289,7 +289,7 @@ func TestHandleVoice_ConversionFails(t *testing.T) {
 		t.Fatal("expected error when conversion fails, got nil")
 	}
 	if path != "" {
-		os.Remove(path)
+		_ = os.Remove(path)
 		t.Errorf("expected empty path, got %q", path)
 	}
 	if !strings.Contains(err.Error(), "convert to wav") {
@@ -329,8 +329,8 @@ func TestHandleVoice_TranscriptionSuccess(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		tmp.Write([]byte("fake-wav-data"))
-		tmp.Close()
+		_, _ = tmp.Write([]byte("fake-wav-data"))
+		_ = tmp.Close()
 		wavPath = tmp.Name()
 		return wavPath, nil
 	}
@@ -382,8 +382,8 @@ func TestHandleVoice_TranscriptionFails(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		tmp.Write([]byte("fake-wav-data"))
-		tmp.Close()
+		_, _ = tmp.Write([]byte("fake-wav-data"))
+		_ = tmp.Close()
 		wavPath = tmp.Name()
 		return wavPath, nil
 	}

@@ -31,7 +31,7 @@ func newCaptureServer(t *testing.T) (*httptest.Server, *[]capturedMessage) {
 
 		switch {
 		case strings.HasSuffix(r.URL.Path, "getMe"):
-			json.NewEncoder(w).Encode(map[string]any{
+			_ = json.NewEncoder(w).Encode(map[string]any{
 				"ok": true,
 				"result": map[string]any{
 					"id": 123, "is_bot": true,
@@ -39,13 +39,13 @@ func newCaptureServer(t *testing.T) (*httptest.Server, *[]capturedMessage) {
 				},
 			})
 		case strings.HasSuffix(r.URL.Path, "sendMessage"):
-			r.ParseForm()
+			_ = r.ParseForm()
 			chatID, _ := strconv.ParseInt(r.FormValue("chat_id"), 10, 64)
 			text := r.FormValue("text")
 			replyTo, _ := strconv.Atoi(r.FormValue("reply_to_message_id"))
 			captured = append(captured, capturedMessage{ChatID: chatID, Text: text, ReplyToMessageID: replyTo})
 
-			json.NewEncoder(w).Encode(map[string]any{
+			_ = json.NewEncoder(w).Encode(map[string]any{
 				"ok": true,
 				"result": map[string]any{
 					"message_id": 1,
@@ -55,7 +55,7 @@ func newCaptureServer(t *testing.T) (*httptest.Server, *[]capturedMessage) {
 				},
 			})
 		default:
-			json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": map[string]any{}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": map[string]any{}})
 		}
 	}))
 
@@ -177,7 +177,7 @@ func TestHandleStart_AuthorizedUser(t *testing.T) {
 	server, captured := newCaptureServer(t)
 	defer server.Close()
 	s := openTestStore(t)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	// admin user is always authorized
 	b := newTestBotWithStore(t, server, s)
@@ -197,7 +197,7 @@ func TestHandleStart_UnauthorizedUser(t *testing.T) {
 	server, captured := newCaptureServer(t)
 	defer server.Close()
 	s := openTestStore(t)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	b := newTestBotWithStore(t, server, s)
 	msg := commandMessage(42, 99999, "/start")
@@ -216,7 +216,7 @@ func TestHandleStart_ValidToken_Unauthorized(t *testing.T) {
 	server, captured := newCaptureServer(t)
 	defer server.Close()
 	s := openTestStore(t)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	// create an invite token
 	token := "test-valid-token-1234"
@@ -250,7 +250,7 @@ func TestHandleStart_InvalidToken(t *testing.T) {
 	server, captured := newCaptureServer(t)
 	defer server.Close()
 	s := openTestStore(t)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	b := newTestBotWithStore(t, server, s)
 	msg := commandMessage(42, 99999, "/start bad-token")
@@ -269,7 +269,7 @@ func TestHandleStart_TokenAlreadyAuthorized(t *testing.T) {
 	server, captured := newCaptureServer(t)
 	defer server.Close()
 	s := openTestStore(t)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	// create an invite token
 	token := "test-token-not-consumed"
@@ -306,7 +306,7 @@ func TestHandleAllow_AdminSuccess(t *testing.T) {
 	server, captured := newCaptureServer(t)
 	defer server.Close()
 	s := openTestStore(t)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	b := newTestBotWithStore(t, server, s)
 	msg := commandMessage(42, 12345, "/allow 99999")
@@ -334,7 +334,7 @@ func TestHandleAllow_NonAdmin(t *testing.T) {
 	server, captured := newCaptureServer(t)
 	defer server.Close()
 	s := openTestStore(t)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	// allow user 99999 so they pass the auth gate, but they are NOT admin
 	if err := s.AllowUser(99999, 12345); err != nil {
@@ -358,7 +358,7 @@ func TestHandleAllow_NoArg(t *testing.T) {
 	server, captured := newCaptureServer(t)
 	defer server.Close()
 	s := openTestStore(t)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	b := newTestBotWithStore(t, server, s)
 	msg := commandMessage(42, 12345, "/allow")
@@ -377,7 +377,7 @@ func TestHandleAllow_InvalidFormat(t *testing.T) {
 	server, captured := newCaptureServer(t)
 	defer server.Close()
 	s := openTestStore(t)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	b := newTestBotWithStore(t, server, s)
 	msg := commandMessage(42, 12345, "/allow abc")
@@ -398,7 +398,7 @@ func TestHandleAllow_StoreError(t *testing.T) {
 	s := openTestStore(t)
 
 	// close the store to force an error
-	s.Close()
+	_ = s.Close()
 
 	b := newTestBotWithStore(t, server, s)
 	msg := commandMessage(42, 12345, "/allow 99999")
@@ -417,7 +417,7 @@ func TestHandleDeny_AdminSuccess(t *testing.T) {
 	server, captured := newCaptureServer(t)
 	defer server.Close()
 	s := openTestStore(t)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	// allow user first so they can be denied
 	if err := s.AllowUser(99999, 12345); err != nil {
@@ -450,7 +450,7 @@ func TestHandleDeny_NonAdmin(t *testing.T) {
 	server, captured := newCaptureServer(t)
 	defer server.Close()
 	s := openTestStore(t)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	if err := s.AllowUser(99999, 12345); err != nil {
 		t.Fatalf("AllowUser: %v", err)
@@ -473,7 +473,7 @@ func TestHandleDeny_SelfDeny(t *testing.T) {
 	server, captured := newCaptureServer(t)
 	defer server.Close()
 	s := openTestStore(t)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	b := newTestBotWithStore(t, server, s)
 	msg := commandMessage(42, 12345, "/deny 12345")
@@ -492,7 +492,7 @@ func TestHandleList_AdminWithUsers(t *testing.T) {
 	server, captured := newCaptureServer(t)
 	defer server.Close()
 	s := openTestStore(t)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	// add users with known usernames
 	if err := s.AllowUser(111, 12345); err != nil {
@@ -532,7 +532,7 @@ func TestHandleList_AdminEmpty(t *testing.T) {
 	server, captured := newCaptureServer(t)
 	defer server.Close()
 	s := openTestStore(t)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	b := newTestBotWithStore(t, server, s)
 	msg := commandMessage(42, 12345, "/list")
@@ -551,7 +551,7 @@ func TestHandleList_NonAdmin(t *testing.T) {
 	server, captured := newCaptureServer(t)
 	defer server.Close()
 	s := openTestStore(t)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	if err := s.AllowUser(99999, 12345); err != nil {
 		t.Fatalf("AllowUser: %v", err)
@@ -576,7 +576,7 @@ func TestHandleList_StoreError(t *testing.T) {
 	s := openTestStore(t)
 
 	// close the store to force an error
-	s.Close()
+	_ = s.Close()
 
 	b := newTestBotWithStore(t, server, s)
 	msg := commandMessage(42, 12345, "/list")
@@ -595,7 +595,7 @@ func TestHandleInvite_AdminSuccess(t *testing.T) {
 	server, captured := newCaptureServer(t)
 	defer server.Close()
 	s := openTestStore(t)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	b := newTestBotWithStore(t, server, s)
 	msg := commandMessage(42, 12345, "/invite")
@@ -617,7 +617,7 @@ func TestHandleInvite_NonAdmin(t *testing.T) {
 	server, captured := newCaptureServer(t)
 	defer server.Close()
 	s := openTestStore(t)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	if err := s.AllowUser(99999, 12345); err != nil {
 		t.Fatalf("AllowUser: %v", err)
@@ -642,7 +642,7 @@ func TestHandleInvite_StoreError(t *testing.T) {
 	s := openTestStore(t)
 
 	// close the store to force an error
-	s.Close()
+	_ = s.Close()
 
 	b := newTestBotWithStore(t, server, s)
 	msg := commandMessage(42, 12345, "/invite")
@@ -661,7 +661,7 @@ func TestHandleDeny_UserNotFound(t *testing.T) {
 	server, captured := newCaptureServer(t)
 	defer server.Close()
 	s := openTestStore(t)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	b := newTestBotWithStore(t, server, s)
 	msg := commandMessage(42, 12345, "/deny 99999")

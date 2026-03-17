@@ -58,7 +58,7 @@ func (b *Bot) handleVoice(msg *tgbotapi.Message) (string, error) {
 		b.reply(msg, "Не удалось загрузить голосовое сообщение.")
 		return "", fmt.Errorf("download voice file: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		log.Printf("voice file download returned status %d", resp.StatusCode)
@@ -77,21 +77,21 @@ func (b *Bot) handleVoice(msg *tgbotapi.Message) (string, error) {
 
 	n, err := io.Copy(tmp, io.LimitReader(resp.Body, maxVoiceFileSize+1))
 	if err != nil {
-		tmp.Close()
-		os.Remove(oggPath)
+		_ = tmp.Close()
+		_ = os.Remove(oggPath)
 		log.Printf("failed to write voice file: %v", err)
 		b.reply(msg, "Не удалось загрузить голосовое сообщение.")
 		return "", fmt.Errorf("write voice file: %w", err)
 	}
 	if n > maxVoiceFileSize {
-		tmp.Close()
-		os.Remove(oggPath)
+		_ = tmp.Close()
+		_ = os.Remove(oggPath)
 		log.Printf("voice file body exceeds size limit: %d bytes read", n)
 		b.reply(msg, "Не удалось загрузить голосовое сообщение.")
 		return "", fmt.Errorf("voice file body too large: %d bytes", n)
 	}
 	if err := tmp.Close(); err != nil {
-		os.Remove(oggPath)
+		_ = os.Remove(oggPath)
 		log.Printf("failed to flush voice file: %v", err)
 		b.reply(msg, "Не удалось загрузить голосовое сообщение.")
 		return "", fmt.Errorf("close voice file: %w", err)
@@ -102,20 +102,20 @@ func (b *Bot) handleVoice(msg *tgbotapi.Message) (string, error) {
 	// convert OGG to WAV
 	wavPath, err := b.convertToWAV(oggPath)
 	if err != nil {
-		os.Remove(oggPath)
+		_ = os.Remove(oggPath)
 		log.Printf("failed to convert voice file: %v", err)
 		b.reply(msg, "Не удалось обработать голосовое сообщение.")
 		return "", fmt.Errorf("convert to wav: %w", err)
 	}
 
 	// OGG no longer needed
-	os.Remove(oggPath)
+	_ = os.Remove(oggPath)
 
 	log.Printf("voice message converted to %s", wavPath)
 
 	// transcribe WAV to text
 	text, err := b.transcriber.Transcribe(wavPath)
-	os.Remove(wavPath)
+	_ = os.Remove(wavPath)
 	if err != nil {
 		log.Printf("failed to transcribe voice: %v", err)
 		b.reply(msg, "Не удалось расшифровать сообщение. Попробуйте позже.")

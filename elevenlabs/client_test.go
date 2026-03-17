@@ -19,8 +19,8 @@ func newTestWAV(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tmp.Write([]byte("fake-wav-data"))
-	tmp.Close()
+	_, _ = tmp.Write([]byte("fake-wav-data"))
+	_ = tmp.Close()
 	return tmp.Name()
 }
 
@@ -62,7 +62,7 @@ func TestTranscribe_Success(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to get uploaded file: %v", err)
 		}
-		defer file.Close()
+		defer func() { _ = file.Close() }()
 		if header.Filename == "" {
 			t.Error("uploaded file has no filename")
 		}
@@ -72,7 +72,7 @@ func TestTranscribe_Success(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"text":                 "привет мир",
 			"language_code":        "ru",
 			"language_probability": 0.99,
@@ -81,7 +81,7 @@ func TestTranscribe_Success(t *testing.T) {
 	defer server.Close()
 
 	wavPath := newTestWAV(t)
-	defer os.Remove(wavPath)
+	defer func() { _ = os.Remove(wavPath) }()
 
 	c := NewClient("test-key")
 	c.baseURL = server.URL
@@ -98,12 +98,12 @@ func TestTranscribe_Success(t *testing.T) {
 func TestTranscribe_APIError400(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(`{"detail":{"message":"invalid request"}}`))
+		_, _ = w.Write([]byte(`{"detail":{"message":"invalid request"}}`))
 	}))
 	defer server.Close()
 
 	wavPath := newTestWAV(t)
-	defer os.Remove(wavPath)
+	defer func() { _ = os.Remove(wavPath) }()
 
 	c := NewClient("test-key")
 	c.baseURL = server.URL
@@ -120,7 +120,7 @@ func TestTranscribe_APIError400(t *testing.T) {
 func TestTranscribe_EmptyText(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"text":                 "",
 			"language_code":        "ru",
 			"language_probability": 0.99,
@@ -129,7 +129,7 @@ func TestTranscribe_EmptyText(t *testing.T) {
 	defer server.Close()
 
 	wavPath := newTestWAV(t)
-	defer os.Remove(wavPath)
+	defer func() { _ = os.Remove(wavPath) }()
 
 	c := NewClient("test-key")
 	c.baseURL = server.URL
@@ -146,7 +146,7 @@ func TestTranscribe_EmptyText(t *testing.T) {
 func TestTranscribe_WhitespaceOnlyText(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"text":                 "   \n  ",
 			"language_code":        "ru",
 			"language_probability": 0.99,
@@ -155,7 +155,7 @@ func TestTranscribe_WhitespaceOnlyText(t *testing.T) {
 	defer server.Close()
 
 	wavPath := newTestWAV(t)
-	defer os.Remove(wavPath)
+	defer func() { _ = os.Remove(wavPath) }()
 
 	c := NewClient("test-key")
 	c.baseURL = server.URL
@@ -175,11 +175,11 @@ func TestTranscribe_Retry500ThenSuccess(t *testing.T) {
 		n := calls.Add(1)
 		if n == 1 {
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte("server error"))
+			_, _ = w.Write([]byte("server error"))
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"text":                 "привет мир",
 			"language_code":        "ru",
 			"language_probability": 0.99,
@@ -188,7 +188,7 @@ func TestTranscribe_Retry500ThenSuccess(t *testing.T) {
 	defer server.Close()
 
 	wavPath := newTestWAV(t)
-	defer os.Remove(wavPath)
+	defer func() { _ = os.Remove(wavPath) }()
 
 	c := NewClient("test-key")
 	c.baseURL = server.URL
@@ -210,12 +210,12 @@ func TestTranscribe_Retry500BothFail(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("server error"))
+		_, _ = w.Write([]byte("server error"))
 	}))
 	defer server.Close()
 
 	wavPath := newTestWAV(t)
-	defer os.Remove(wavPath)
+	defer func() { _ = os.Remove(wavPath) }()
 
 	c := NewClient("test-key")
 	c.baseURL = server.URL
@@ -242,7 +242,7 @@ func TestTranscribe_RetryTimeoutThenSuccess(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"text":                 "привет мир",
 			"language_code":        "ru",
 			"language_probability": 0.99,
@@ -251,7 +251,7 @@ func TestTranscribe_RetryTimeoutThenSuccess(t *testing.T) {
 	defer server.Close()
 
 	wavPath := newTestWAV(t)
-	defer os.Remove(wavPath)
+	defer func() { _ = os.Remove(wavPath) }()
 
 	c := NewClient("test-key")
 	c.baseURL = server.URL

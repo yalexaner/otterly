@@ -136,7 +136,7 @@ func (b *Bot) Start() {
 				continue
 			}
 			log.Printf("[voice] from user %d, duration %ds", update.Message.From.ID, update.Message.Voice.Duration)
-			b.handleVoice(update.Message)
+			_, _ = b.handleVoice(update.Message)
 		} else if update.Message.Text != "" {
 			log.Printf("[text] from user %d", update.Message.From.ID)
 		} else {

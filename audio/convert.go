@@ -26,7 +26,7 @@ func ConvertToWAV(inputPath string) (string, error) {
 	}
 	outputPath := tmp.Name()
 	if err := tmp.Close(); err != nil {
-		os.Remove(outputPath)
+		_ = os.Remove(outputPath)
 		return "", fmt.Errorf("close temp file: %w", err)
 	}
 
@@ -35,7 +35,7 @@ func ConvertToWAV(inputPath string) (string, error) {
 
 	cmd := execCommandContext(ctx, "ffmpeg", "-i", inputPath, "-ar", "16000", "-ac", "1", "-f", "wav", "-y", outputPath)
 	if output, err := cmd.CombinedOutput(); err != nil {
-		os.Remove(outputPath)
+		_ = os.Remove(outputPath)
 		return "", fmt.Errorf("ffmpeg conversion failed: %w: %s", err, output)
 	}
 

@@ -13,7 +13,7 @@ func TestOpen_SetsWALMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	var mode string
 	if err := s.db.QueryRow("PRAGMA journal_mode").Scan(&mode); err != nil {
@@ -29,7 +29,7 @@ func TestMigrate_CreatesTablesIdempotently(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	// call Migrate twice — second call must not fail
 	for i := range 2 {
@@ -55,7 +55,7 @@ func TestMigrate_StatusCheckConstraint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	if err := s.Migrate(); err != nil {
 		t.Fatalf("Migrate: %v", err)
@@ -74,7 +74,7 @@ func TestEnsureAdmin_InsertsOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	if err := s.Migrate(); err != nil {
 		t.Fatalf("Migrate: %v", err)
@@ -109,7 +109,7 @@ func TestEnsureAdmin_DoesNotOverwriteExistingStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	if err := s.Migrate(); err != nil {
 		t.Fatalf("Migrate: %v", err)
@@ -142,7 +142,7 @@ func TestEnsureAdmin_SkipsZeroID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	if err := s.Migrate(); err != nil {
 		t.Fatalf("Migrate: %v", err)
@@ -168,7 +168,7 @@ func newTestStore(t *testing.T) *Store {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	t.Cleanup(func() { s.Close() })
+	t.Cleanup(func() { _ = s.Close() })
 	if err := s.Migrate(); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
