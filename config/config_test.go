@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -54,6 +55,7 @@ func TestLoad_MissingToken(t *testing.T) {
 func TestLoad_OptionalAdminID(t *testing.T) {
 	clearEnv(t)
 	t.Setenv("TELEGRAM_BOT_TOKEN", "test-token")
+	t.Setenv("ELEVENLABS_API_KEY", "el-key")
 
 	cfg, err := Load()
 	if err != nil {
@@ -67,24 +69,25 @@ func TestLoad_OptionalAdminID(t *testing.T) {
 func TestLoad_InvalidAdminID(t *testing.T) {
 	clearEnv(t)
 	t.Setenv("TELEGRAM_BOT_TOKEN", "test-token")
+	t.Setenv("ELEVENLABS_API_KEY", "el-key")
 	t.Setenv("TELEGRAM_ADMIN_ID", "not-a-number")
 
 	_, err := Load()
 	if err == nil {
 		t.Fatal("expected error for invalid TELEGRAM_ADMIN_ID")
 	}
+	if !strings.Contains(err.Error(), "TELEGRAM_ADMIN_ID") {
+		t.Errorf("error = %q, want it to mention TELEGRAM_ADMIN_ID", err)
+	}
 }
 
-func TestLoad_OptionalElevenLabsKey(t *testing.T) {
+func TestLoad_MissingElevenLabsKey(t *testing.T) {
 	clearEnv(t)
 	t.Setenv("TELEGRAM_BOT_TOKEN", "test-token")
 
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
-	}
-	if cfg.ElevenLabsAPIKey != "" {
-		t.Errorf("ElevenLabsAPIKey = %q, want empty", cfg.ElevenLabsAPIKey)
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for missing ELEVENLABS_API_KEY")
 	}
 }
 

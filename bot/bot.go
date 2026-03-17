@@ -2,12 +2,12 @@ package bot
 
 import (
 	"log"
-	"os"
 	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/yalexaner/otterly/audio"
 	"github.com/yalexaner/otterly/config"
+	"github.com/yalexaner/otterly/elevenlabs"
 )
 
 // Bot wraps the Telegram bot API client and application config.
@@ -16,6 +16,7 @@ type Bot struct {
 	cfg          config.Config
 	fileEndpoint string
 	convertToWAV func(string) (string, error)
+	transcriber  transcriber
 }
 
 // New creates a new Bot instance using the provided config.
@@ -41,6 +42,7 @@ func newWithEndpoint(cfg config.Config, apiEndpoint string) (*Bot, error) {
 		cfg:          cfg,
 		fileEndpoint: fileEndpoint,
 		convertToWAV: audio.ConvertToWAV,
+		transcriber:  elevenlabs.NewClient(cfg.ElevenLabsAPIKey),
 	}, nil
 }
 
@@ -67,10 +69,7 @@ func (b *Bot) Start() {
 				continue
 			}
 			log.Printf("[voice] from user %d, duration %ds", update.Message.From.ID, update.Message.Voice.Duration)
-			// clean up WAV temp file until a downstream consumer (e.g., transcription) is added
-			if wavPath, err := b.handleVoice(update.Message); err == nil {
-				os.Remove(wavPath)
-			}
+			b.handleVoice(update.Message)
 		} else if update.Message.Text != "" {
 			log.Printf("[text] from user %d", update.Message.From.ID)
 		} else {

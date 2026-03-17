@@ -102,6 +102,18 @@ func voiceMessage(chatID int64, fileID string, duration int) *tgbotapi.Message {
 	}
 }
 
+// fakeTranscriber implements the transcriber interface for tests.
+type fakeTranscriber struct {
+	text        string
+	err         error
+	capturedPath string
+}
+
+func (f *fakeTranscriber) Transcribe(wavPath string) (string, error) {
+	f.capturedPath = wavPath
+	return f.text, f.err
+}
+
 // mockConverter returns a converter that creates a WAV temp file with the given content.
 func mockConverter(t *testing.T) func(string) (string, error) {
 	t.Helper()
@@ -134,20 +146,18 @@ func TestHandleVoice_Success(t *testing.T) {
 		tmp.Close()
 		return tmp.Name(), nil
 	}
+	b.transcriber = &fakeTranscriber{text: "привет мир"}
 
 	msg := voiceMessage(42, "test-file-id", 5)
 
-	path, err := b.handleVoice(msg)
+	text, err := b.handleVoice(msg)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
 
-	// temp file cleanup is caller's responsibility; clean up here for the test
-	defer os.Remove(path)
-
-	// verify WAV output
-	if !strings.HasSuffix(path, ".wav") {
-		t.Errorf("temp file path %q does not end with .wav", path)
+	// verify transcript returned
+	if text != "привет мир" {
+		t.Errorf("text = %q, want %q", text, "привет мир")
 	}
 
 	// verify conversion was called with OGG path
@@ -163,12 +173,12 @@ func TestHandleVoice_Success(t *testing.T) {
 		t.Errorf("OGG temp file %q was not cleaned up", convertedInput)
 	}
 
-	// verify confirmation reply was sent
+	// verify transcript reply was sent
 	if len(*captured) != 1 {
 		t.Fatalf("expected 1 reply, got %d", len(*captured))
 	}
-	if (*captured)[0].Text != "Голосовое сообщение получено." {
-		t.Errorf("reply = %q, want confirmation message", (*captured)[0].Text)
+	if (*captured)[0].Text != "привет мир" {
+		t.Errorf("reply = %q, want transcript text", (*captured)[0].Text)
 	}
 	if (*captured)[0].ChatID != 42 {
 		t.Errorf("reply chat ID = %d, want 42", (*captured)[0].ChatID)
@@ -306,6 +316,110 @@ func TestHandleVoice_ConversionFails(t *testing.T) {
 	}
 }
 
+func TestHandleVoice_TranscriptionSuccess(t *testing.T) {
+	fakeOGG := []byte("fake-ogg-data")
+	server, captured := newVoiceServer(t, voiceServerOpts{fileContent: fakeOGG})
+	defer server.Close()
+
+	b := newTestBotWithCapture(t, server)
+
+	var wavPath string
+	b.convertToWAV = func(inputPath string) (string, error) {
+		tmp, err := os.CreateTemp("", "test-*.wav")
+		if err != nil {
+			t.Fatal(err)
+		}
+		tmp.Write([]byte("fake-wav-data"))
+		tmp.Close()
+		wavPath = tmp.Name()
+		return wavPath, nil
+	}
+	ft := &fakeTranscriber{text: "расшифрованный текст"}
+	b.transcriber = ft
+
+	msg := voiceMessage(42, "test-file-id", 10)
+
+	text, err := b.handleVoice(msg)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if text != "расшифрованный текст" {
+		t.Errorf("text = %q, want %q", text, "расшифрованный текст")
+	}
+
+	// verify transcriber received the WAV path from converter
+	if ft.capturedPath != wavPath {
+		t.Errorf("transcriber got path %q, want %q", ft.capturedPath, wavPath)
+	}
+
+	// verify WAV temp file was cleaned up
+	if _, err := os.Stat(wavPath); !os.IsNotExist(err) {
+		t.Errorf("WAV temp file %q was not cleaned up", wavPath)
+	}
+
+	// verify transcript reply was sent
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 reply, got %d", len(*captured))
+	}
+	if (*captured)[0].Text != "расшифрованный текст" {
+		t.Errorf("reply = %q, want transcript text", (*captured)[0].Text)
+	}
+	if (*captured)[0].ReplyToMessageID != 100 {
+		t.Errorf("reply_to_message_id = %d, want 100", (*captured)[0].ReplyToMessageID)
+	}
+}
+
+func TestHandleVoice_TranscriptionFails(t *testing.T) {
+	fakeOGG := []byte("fake-ogg-data")
+	server, captured := newVoiceServer(t, voiceServerOpts{fileContent: fakeOGG})
+	defer server.Close()
+
+	b := newTestBotWithCapture(t, server)
+
+	var wavPath string
+	b.convertToWAV = func(inputPath string) (string, error) {
+		tmp, err := os.CreateTemp("", "test-*.wav")
+		if err != nil {
+			t.Fatal(err)
+		}
+		tmp.Write([]byte("fake-wav-data"))
+		tmp.Close()
+		wavPath = tmp.Name()
+		return wavPath, nil
+	}
+	b.transcriber = &fakeTranscriber{err: fmt.Errorf("API error 500: server error")}
+
+	msg := voiceMessage(42, "test-file-id", 10)
+
+	text, err := b.handleVoice(msg)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if text != "" {
+		t.Errorf("text = %q, want empty", text)
+	}
+	if !strings.Contains(err.Error(), "transcribe") {
+		t.Errorf("error = %q, want it to contain 'transcribe'", err)
+	}
+
+	// verify WAV temp file was cleaned up despite error
+	if _, err := os.Stat(wavPath); !os.IsNotExist(err) {
+		t.Errorf("WAV temp file %q was not cleaned up after transcription failure", wavPath)
+	}
+
+	// verify error reply was sent
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 reply, got %d", len(*captured))
+	}
+	want := "Не удалось расшифровать сообщение. Попробуйте позже."
+	if (*captured)[0].Text != want {
+		t.Errorf("reply = %q, want %q", (*captured)[0].Text, want)
+	}
+	if (*captured)[0].ChatID != 42 {
+		t.Errorf("reply chat ID = %d, want 42", (*captured)[0].ChatID)
+	}
+}
+
 func TestHandleVoice_ExactLimit(t *testing.T) {
 	fakeOGG := []byte("fake-ogg-data")
 	server, captured := newVoiceServer(t, voiceServerOpts{fileContent: fakeOGG})
@@ -313,24 +427,24 @@ func TestHandleVoice_ExactLimit(t *testing.T) {
 
 	b := newTestBotWithCapture(t, server)
 	b.convertToWAV = mockConverter(t)
+	b.transcriber = &fakeTranscriber{text: "тест"}
 	msg := voiceMessage(42, "test-file-id", 90)
 
-	path, err := b.handleVoice(msg)
+	text, err := b.handleVoice(msg)
 	if err != nil {
 		t.Fatalf("expected no error for 90s voice, got: %v", err)
 	}
-	defer os.Remove(path)
 
-	// verify WAV output (not rejected)
-	if !strings.HasSuffix(path, ".wav") {
-		t.Errorf("path %q does not end with .wav", path)
+	// verify transcript returned (not rejected)
+	if text != "тест" {
+		t.Errorf("text = %q, want %q", text, "тест")
 	}
 
-	// verify confirmation reply (not rejection)
+	// verify transcript reply (not rejection)
 	if len(*captured) != 1 {
 		t.Fatalf("expected 1 reply, got %d", len(*captured))
 	}
-	if (*captured)[0].Text != "Голосовое сообщение получено." {
-		t.Errorf("reply = %q, want confirmation message", (*captured)[0].Text)
+	if (*captured)[0].Text != "тест" {
+		t.Errorf("reply = %q, want transcript text", (*captured)[0].Text)
 	}
 }
