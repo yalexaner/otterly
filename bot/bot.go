@@ -73,8 +73,40 @@ func (b *Bot) isAuthorized(userID int64) bool {
 	return active
 }
 
+// registerCommands sets the bot's command menus using setMyCommands.
+// Default scope gets /start and /help. If an admin ID is configured,
+// the admin's private chat gets the full command list.
+func (b *Bot) registerCommands() {
+	defaultCmds := tgbotapi.NewSetMyCommands(
+		tgbotapi.BotCommand{Command: "start", Description: "Начать работу с ботом"},
+		tgbotapi.BotCommand{Command: "help", Description: "Справка"},
+	)
+	if _, err := b.api.Request(defaultCmds); err != nil {
+		log.Printf("failed to register default commands: %v", err)
+	}
+
+	if b.cfg.TelegramAdminID == 0 {
+		return
+	}
+
+	adminCmds := tgbotapi.NewSetMyCommandsWithScope(
+		tgbotapi.NewBotCommandScopeChat(b.cfg.TelegramAdminID),
+		tgbotapi.BotCommand{Command: "start", Description: "Начать работу с ботом"},
+		tgbotapi.BotCommand{Command: "help", Description: "Справка"},
+		tgbotapi.BotCommand{Command: "allow", Description: "Добавить пользователя"},
+		tgbotapi.BotCommand{Command: "deny", Description: "Заблокировать пользователя"},
+		tgbotapi.BotCommand{Command: "list", Description: "Список пользователей"},
+		tgbotapi.BotCommand{Command: "invite", Description: "Создать приглашение"},
+	)
+	if _, err := b.api.Request(adminCmds); err != nil {
+		log.Printf("failed to register admin commands: %v", err)
+	}
+}
+
 // Start begins the long-polling loop, receiving and dispatching updates.
 func (b *Bot) Start() {
+	b.registerCommands()
+
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
 
