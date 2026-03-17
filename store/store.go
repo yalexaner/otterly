@@ -2,10 +2,23 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 
 	_ "modernc.org/sqlite"
 )
+
+// User represents a registered bot user.
+type User struct {
+	TelegramUserID int64
+	Username       string
+	Status         string
+	AddedBy        int64
+	AddedAt        string
+}
+
+// ErrNotFound is returned when a user does not exist.
+var ErrNotFound = errors.New("user not found")
 
 // Store wraps a SQLite database connection for user and invite management.
 type Store struct {
@@ -90,4 +103,78 @@ CREATE TABLE IF NOT EXISTS invites (
 	}
 
 	return nil
+}
+
+// IsActive returns true if the user exists and has status 'active'.
+func (s *Store) IsActive(telegramUserID int64) (bool, error) {
+	var exists int
+	err := s.db.QueryRow(
+		"SELECT 1 FROM users WHERE telegram_user_id = ? AND status = 'active'",
+		telegramUserID,
+	).Scan(&exists)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("is active: %w", err)
+	}
+	return true, nil
+}
+
+// AllowUser adds the user as active or re-activates them if they were blocked.
+func (s *Store) AllowUser(telegramUserID, addedBy int64) error {
+	_, err := s.db.Exec(
+		`INSERT INTO users (telegram_user_id, added_by, status)
+		 VALUES (?, ?, 'active')
+		 ON CONFLICT(telegram_user_id) DO UPDATE SET status = 'active'`,
+		telegramUserID, addedBy,
+	)
+	if err != nil {
+		return fmt.Errorf("allow user: %w", err)
+	}
+	return nil
+}
+
+// BlockUser sets the user's status to 'blocked'. Returns ErrNotFound if the
+// user does not exist.
+func (s *Store) BlockUser(telegramUserID int64) error {
+	res, err := s.db.Exec(
+		"UPDATE users SET status = 'blocked' WHERE telegram_user_id = ?",
+		telegramUserID,
+	)
+	if err != nil {
+		return fmt.Errorf("block user: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("block user rows affected: %w", err)
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// ListUsers returns all users ordered by added_at.
+func (s *Store) ListUsers() ([]User, error) {
+	rows, err := s.db.Query(
+		"SELECT telegram_user_id, username, status, added_by, added_at FROM users ORDER BY added_at",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list users: %w", err)
+	}
+	defer rows.Close()
+
+	var users []User
+	for rows.Next() {
+		var u User
+		if err := rows.Scan(&u.TelegramUserID, &u.Username, &u.Status, &u.AddedBy, &u.AddedAt); err != nil {
+			return nil, fmt.Errorf("scan user: %w", err)
+		}
+		users = append(users, u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate users: %w", err)
+	}
+	return users, nil
 }
