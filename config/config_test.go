@@ -9,7 +9,7 @@ import (
 // clearEnv unsets all config-related env vars with automatic restore via t.Setenv.
 func clearEnv(t *testing.T) {
 	t.Helper()
-	for _, k := range []string{"TELEGRAM_BOT_TOKEN", "TELEGRAM_ADMIN_ID", "ELEVENLABS_API_KEY"} {
+	for _, k := range []string{"TELEGRAM_BOT_TOKEN", "TELEGRAM_ADMIN_ID", "ELEVENLABS_API_KEY", "DATABASE_PATH"} {
 		t.Setenv(k, "")
 		os.Unsetenv(k)
 	}
@@ -38,6 +38,9 @@ func TestLoad_AllVarsSet(t *testing.T) {
 	}
 	if cfg.ElevenLabsAPIKey != "el-key" {
 		t.Errorf("ElevenLabsAPIKey = %q, want %q", cfg.ElevenLabsAPIKey, "el-key")
+	}
+	if cfg.DatabasePath != "otterly.db" {
+		t.Errorf("DatabasePath = %q, want %q", cfg.DatabasePath, "otterly.db")
 	}
 }
 
@@ -97,5 +100,32 @@ func TestLoad_AllMissing(t *testing.T) {
 	_, err := Load()
 	if err == nil {
 		t.Fatal("expected error when all vars are missing")
+	}
+}
+
+func TestLoad_DefaultDatabasePath(t *testing.T) {
+	clearEnv(t)
+	setAllEnv(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if cfg.DatabasePath != "otterly.db" {
+		t.Errorf("DatabasePath = %q, want %q", cfg.DatabasePath, "otterly.db")
+	}
+}
+
+func TestLoad_CustomDatabasePath(t *testing.T) {
+	clearEnv(t)
+	setAllEnv(t)
+	t.Setenv("DATABASE_PATH", "/tmp/custom.db")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if cfg.DatabasePath != "/tmp/custom.db" {
+		t.Errorf("DatabasePath = %q, want %q", cfg.DatabasePath, "/tmp/custom.db")
 	}
 }

@@ -14,6 +14,7 @@ type Config struct {
 	TelegramBotToken string
 	TelegramAdminID  int64
 	ElevenLabsAPIKey string
+	DatabasePath     string
 }
 
 // Load reads configuration from .env file (if present) and environment variables.
@@ -24,9 +25,15 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("failed to load .env file: %w", err)
 	}
 
+	dbPath := os.Getenv("DATABASE_PATH")
+	if dbPath == "" {
+		dbPath = "otterly.db"
+	}
+
 	cfg := Config{
 		TelegramBotToken: os.Getenv("TELEGRAM_BOT_TOKEN"),
 		ElevenLabsAPIKey: os.Getenv("ELEVENLABS_API_KEY"),
+		DatabasePath:     dbPath,
 	}
 
 	if cfg.TelegramBotToken == "" {
