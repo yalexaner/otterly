@@ -64,10 +64,22 @@ func (b *Bot) handleStart(msg *tgbotapi.Message) {
 	b.reply(msg, "Добро пожаловать! Теперь вы можете отправлять голосовые сообщения.")
 }
 
+// requireStore checks that the store is available and replies with an error if not.
+func (b *Bot) requireStore(msg *tgbotapi.Message) bool {
+	if b.store == nil {
+		b.reply(msg, "Функция недоступна.")
+		return false
+	}
+	return true
+}
+
 // handleAllow handles the /allow command to add a user to the whitelist.
 func (b *Bot) handleAllow(msg *tgbotapi.Message) {
 	if !b.isAdmin(msg.From.ID) {
 		b.reply(msg, "Эта команда не поддерживается.")
+		return
+	}
+	if !b.requireStore(msg) {
 		return
 	}
 
@@ -96,6 +108,9 @@ func (b *Bot) handleAllow(msg *tgbotapi.Message) {
 func (b *Bot) handleDeny(msg *tgbotapi.Message) {
 	if !b.isAdmin(msg.From.ID) {
 		b.reply(msg, "Эта команда не поддерживается.")
+		return
+	}
+	if !b.requireStore(msg) {
 		return
 	}
 
@@ -134,6 +149,9 @@ func (b *Bot) handleList(msg *tgbotapi.Message) {
 		b.reply(msg, "Эта команда не поддерживается.")
 		return
 	}
+	if !b.requireStore(msg) {
+		return
+	}
 
 	users, err := b.store.ListUsers()
 	if err != nil {
@@ -162,6 +180,9 @@ func (b *Bot) handleList(msg *tgbotapi.Message) {
 func (b *Bot) handleInvite(msg *tgbotapi.Message) {
 	if !b.isAdmin(msg.From.ID) {
 		b.reply(msg, "Эта команда не поддерживается.")
+		return
+	}
+	if !b.requireStore(msg) {
 		return
 	}
 

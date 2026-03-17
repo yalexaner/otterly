@@ -41,7 +41,7 @@ type transcribeResponse struct {
 // the transcribed text. retries once on 5xx or timeout errors. returns an
 // error if the API call fails or the response contains empty text.
 func (c *Client) Transcribe(wavPath string) (string, error) {
-	body, contentType, err := c.buildMultipartRequest(wavPath)
+	body, contentType, err := buildMultipartRequest(wavPath)
 	if err != nil {
 		return "", fmt.Errorf("build request: %w", err)
 	}
@@ -115,7 +115,7 @@ func isRetryable(err error) bool {
 }
 
 // buildMultipartRequest creates the multipart form body for the transcription request.
-func (c *Client) buildMultipartRequest(wavPath string) (*bytes.Buffer, string, error) {
+func buildMultipartRequest(wavPath string) (*bytes.Buffer, string, error) {
 	f, err := os.Open(wavPath)
 	if err != nil {
 		return nil, "", fmt.Errorf("open wav file: %w", err)
