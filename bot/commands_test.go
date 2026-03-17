@@ -68,7 +68,7 @@ func newTestBotWithCapture(t *testing.T, server *httptest.Server) *Bot {
 		TelegramAdminID:  12345,
 		ElevenLabsAPIKey: "el-key",
 	}
-	b, err := newWithEndpoint(cfg, server.URL+"/bot%s/%s")
+	b, err := newWithEndpoint(cfg, nil, server.URL+"/bot%s/%s")
 	if err != nil {
 		t.Fatalf("failed to create test bot: %v", err)
 	}

@@ -8,12 +8,14 @@ import (
 	"github.com/yalexaner/otterly/audio"
 	"github.com/yalexaner/otterly/config"
 	"github.com/yalexaner/otterly/elevenlabs"
+	"github.com/yalexaner/otterly/store"
 )
 
 // Bot wraps the Telegram bot API client and application config.
 type Bot struct {
 	api          *tgbotapi.BotAPI
 	cfg          config.Config
+	store        *store.Store
 	fileEndpoint string
 	convertToWAV func(string) (string, error)
 	transcriber  transcriber
@@ -21,12 +23,12 @@ type Bot struct {
 
 // New creates a new Bot instance using the provided config.
 // returns an error if the Telegram API client cannot be created.
-func New(cfg config.Config) (*Bot, error) {
-	return newWithEndpoint(cfg, tgbotapi.APIEndpoint)
+func New(cfg config.Config, s *store.Store) (*Bot, error) {
+	return newWithEndpoint(cfg, s, tgbotapi.APIEndpoint)
 }
 
 // newWithEndpoint creates a Bot using a custom API endpoint (used for testing).
-func newWithEndpoint(cfg config.Config, apiEndpoint string) (*Bot, error) {
+func newWithEndpoint(cfg config.Config, s *store.Store, apiEndpoint string) (*Bot, error) {
 	api, err := tgbotapi.NewBotAPIWithAPIEndpoint(cfg.TelegramBotToken, apiEndpoint)
 	if err != nil {
 		return nil, err
@@ -40,6 +42,7 @@ func newWithEndpoint(cfg config.Config, apiEndpoint string) (*Bot, error) {
 	return &Bot{
 		api:          api,
 		cfg:          cfg,
+		store:        s,
 		fileEndpoint: fileEndpoint,
 		convertToWAV: audio.ConvertToWAV,
 		transcriber:  elevenlabs.NewClient(cfg.ElevenLabsAPIKey),

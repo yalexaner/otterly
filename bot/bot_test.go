@@ -27,7 +27,7 @@ func TestNew_ValidToken(t *testing.T) {
 		ElevenLabsAPIKey: "el-key",
 	}
 
-	b, err := newWithEndpoint(cfg, server.URL+"/bot%s/%s")
+	b, err := newWithEndpoint(cfg, nil, server.URL+"/bot%s/%s")
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestNew_InvalidToken(t *testing.T) {
 		ElevenLabsAPIKey: "el-key",
 	}
 
-	b, err := newWithEndpoint(cfg, server.URL+"/bot%s/%s")
+	b, err := newWithEndpoint(cfg, nil, server.URL+"/bot%s/%s")
 	if err == nil {
 		t.Fatal("expected error for invalid token")
 	}
