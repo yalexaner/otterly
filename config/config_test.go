@@ -55,17 +55,17 @@ func TestLoad_MissingToken(t *testing.T) {
 	}
 }
 
-func TestLoad_OptionalAdminID(t *testing.T) {
+func TestLoad_MissingAdminID(t *testing.T) {
 	clearEnv(t)
 	t.Setenv("TELEGRAM_BOT_TOKEN", "test-token")
 	t.Setenv("ELEVENLABS_API_KEY", "el-key")
 
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for missing TELEGRAM_ADMIN_ID")
 	}
-	if cfg.TelegramAdminID != 0 {
-		t.Errorf("TelegramAdminID = %d, want 0", cfg.TelegramAdminID)
+	if !strings.Contains(err.Error(), "TELEGRAM_ADMIN_ID") {
+		t.Errorf("error = %q, want it to mention TELEGRAM_ADMIN_ID", err)
 	}
 }
 
@@ -81,6 +81,36 @@ func TestLoad_InvalidAdminID(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "TELEGRAM_ADMIN_ID") {
 		t.Errorf("error = %q, want it to mention TELEGRAM_ADMIN_ID", err)
+	}
+}
+
+func TestLoad_ZeroAdminID(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("TELEGRAM_BOT_TOKEN", "test-token")
+	t.Setenv("ELEVENLABS_API_KEY", "el-key")
+	t.Setenv("TELEGRAM_ADMIN_ID", "0")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for zero TELEGRAM_ADMIN_ID")
+	}
+	if !strings.Contains(err.Error(), "positive") {
+		t.Errorf("error = %q, want it to mention 'positive'", err)
+	}
+}
+
+func TestLoad_NegativeAdminID(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("TELEGRAM_BOT_TOKEN", "test-token")
+	t.Setenv("ELEVENLABS_API_KEY", "el-key")
+	t.Setenv("TELEGRAM_ADMIN_ID", "-5")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for negative TELEGRAM_ADMIN_ID")
+	}
+	if !strings.Contains(err.Error(), "positive") {
+		t.Errorf("error = %q, want it to mention 'positive'", err)
 	}
 }
 

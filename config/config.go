@@ -44,13 +44,18 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("ELEVENLABS_API_KEY is required but not set")
 	}
 
-	if raw := os.Getenv("TELEGRAM_ADMIN_ID"); raw != "" {
-		id, err := strconv.ParseInt(raw, 10, 64)
-		if err != nil {
-			return Config{}, fmt.Errorf("TELEGRAM_ADMIN_ID must be a valid integer: %w", err)
-		}
-		cfg.TelegramAdminID = id
+	raw := os.Getenv("TELEGRAM_ADMIN_ID")
+	if raw == "" {
+		return Config{}, fmt.Errorf("TELEGRAM_ADMIN_ID is required but not set")
 	}
+	id, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return Config{}, fmt.Errorf("TELEGRAM_ADMIN_ID must be a valid integer: %w", err)
+	}
+	if id <= 0 {
+		return Config{}, fmt.Errorf("TELEGRAM_ADMIN_ID must be a positive integer, got %d", id)
+	}
+	cfg.TelegramAdminID = id
 
 	return cfg, nil
 }
