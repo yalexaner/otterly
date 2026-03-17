@@ -91,6 +91,42 @@ func (b *Bot) handleAllow(msg *tgbotapi.Message) {
 	b.reply(msg, fmt.Sprintf("Пользователь %d добавлен.", userID))
 }
 
+// handleDeny handles the /deny command to block a user.
+func (b *Bot) handleDeny(msg *tgbotapi.Message) {
+	if !b.isAdmin(msg.From.ID) {
+		b.reply(msg, "Эта команда не поддерживается.")
+		return
+	}
+
+	arg := strings.TrimSpace(msg.CommandArguments())
+	if arg == "" {
+		b.reply(msg, "Использование: /deny <telegram_user_id>")
+		return
+	}
+
+	userID, err := strconv.ParseInt(arg, 10, 64)
+	if err != nil {
+		b.reply(msg, "Неверный формат ID. Укажите числовой Telegram ID.")
+		return
+	}
+
+	if userID == msg.From.ID {
+		b.reply(msg, "Нельзя заблокировать администратора.")
+		return
+	}
+
+	if err := b.store.BlockUser(userID); errors.Is(err, store.ErrNotFound) {
+		b.reply(msg, "Пользователь не найден.")
+		return
+	} else if err != nil {
+		log.Printf("failed to block user %d: %v", userID, err)
+		b.reply(msg, "Ошибка при блокировке пользователя.")
+		return
+	}
+
+	b.reply(msg, fmt.Sprintf("Пользователь %d заблокирован.", userID))
+}
+
 // handleCommand dispatches the command to the appropriate handler.
 func (b *Bot) handleCommand(msg *tgbotapi.Message) {
 	switch msg.Command() {
@@ -100,6 +136,8 @@ func (b *Bot) handleCommand(msg *tgbotapi.Message) {
 		b.reply(msg, "Отправьте голосовое сообщение, и бот вернёт текстовую расшифровку.")
 	case "allow":
 		b.handleAllow(msg)
+	case "deny":
+		b.handleDeny(msg)
 	default:
 		b.reply(msg, "Эта команда не поддерживается.")
 	}

@@ -412,3 +412,97 @@ func TestHandleAllow_StoreError(t *testing.T) {
 		t.Errorf("text = %q, want %q", (*captured)[0].Text, want)
 	}
 }
+
+func TestHandleDeny_AdminSuccess(t *testing.T) {
+	server, captured := newCaptureServer(t)
+	defer server.Close()
+	s := openTestStore(t)
+	defer s.Close()
+
+	// allow user first so they can be denied
+	if err := s.AllowUser(99999, 12345); err != nil {
+		t.Fatalf("AllowUser: %v", err)
+	}
+
+	b := newTestBotWithStore(t, server, s)
+	msg := commandMessage(42, 12345, "/deny 99999")
+	b.handleCommand(msg)
+
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 sent message, got %d", len(*captured))
+	}
+	want := "Пользователь 99999 заблокирован."
+	if (*captured)[0].Text != want {
+		t.Errorf("text = %q, want %q", (*captured)[0].Text, want)
+	}
+
+	// verify user is now blocked
+	active, err := s.IsActive(99999)
+	if err != nil {
+		t.Fatalf("IsActive error: %v", err)
+	}
+	if active {
+		t.Error("user should not be active after /deny")
+	}
+}
+
+func TestHandleDeny_NonAdmin(t *testing.T) {
+	server, captured := newCaptureServer(t)
+	defer server.Close()
+	s := openTestStore(t)
+	defer s.Close()
+
+	if err := s.AllowUser(99999, 12345); err != nil {
+		t.Fatalf("AllowUser: %v", err)
+	}
+
+	b := newTestBotWithStore(t, server, s)
+	msg := commandMessage(42, 99999, "/deny 12345")
+	b.handleCommand(msg)
+
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 sent message, got %d", len(*captured))
+	}
+	want := "Эта команда не поддерживается."
+	if (*captured)[0].Text != want {
+		t.Errorf("text = %q, want %q", (*captured)[0].Text, want)
+	}
+}
+
+func TestHandleDeny_SelfDeny(t *testing.T) {
+	server, captured := newCaptureServer(t)
+	defer server.Close()
+	s := openTestStore(t)
+	defer s.Close()
+
+	b := newTestBotWithStore(t, server, s)
+	msg := commandMessage(42, 12345, "/deny 12345")
+	b.handleCommand(msg)
+
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 sent message, got %d", len(*captured))
+	}
+	want := "Нельзя заблокировать администратора."
+	if (*captured)[0].Text != want {
+		t.Errorf("text = %q, want %q", (*captured)[0].Text, want)
+	}
+}
+
+func TestHandleDeny_UserNotFound(t *testing.T) {
+	server, captured := newCaptureServer(t)
+	defer server.Close()
+	s := openTestStore(t)
+	defer s.Close()
+
+	b := newTestBotWithStore(t, server, s)
+	msg := commandMessage(42, 12345, "/deny 99999")
+	b.handleCommand(msg)
+
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 sent message, got %d", len(*captured))
+	}
+	want := "Пользователь не найден."
+	if (*captured)[0].Text != want {
+		t.Errorf("text = %q, want %q", (*captured)[0].Text, want)
+	}
+}
