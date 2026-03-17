@@ -11,12 +11,21 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
+// maxVoiceFileSize is the maximum allowed size for a voice file download (20 MB,
+// matching the Telegram Bot API limit).
+const maxVoiceFileSize = 20 * 1024 * 1024
+
+// transcriber converts audio to text.
+type transcriber interface {
+	Transcribe(wavPath string) (string, error)
+}
+
 // httpClient is used for downloading files from Telegram with a timeout.
 var httpClient = &http.Client{Timeout: 30 * time.Second}
 
-// handleVoice downloads the voice message OGG file from Telegram to a temp file
-// and returns the path to the downloaded file. the caller is responsible for
-// cleaning up the temp file.
+// handleVoice processes a voice message: downloads OGG from Telegram, converts
+// to WAV, transcribes via ElevenLabs, and replies with the transcript. all temp
+// files are cleaned up internally.
 func (b *Bot) handleVoice(msg *tgbotapi.Message) (string, error) {
 	// reject voice messages longer than 90 seconds
 	if msg.Voice.Duration > 90 {
@@ -30,6 +39,13 @@ func (b *Bot) handleVoice(msg *tgbotapi.Message) (string, error) {
 		log.Printf("failed to get file info: %v", err)
 		b.reply(msg, "Не удалось загрузить голосовое сообщение.")
 		return "", fmt.Errorf("get file info: %w", err)
+	}
+
+	// reject files exceeding the size limit
+	if file.FileSize > maxVoiceFileSize {
+		log.Printf("voice file too large: %d bytes", file.FileSize)
+		b.reply(msg, "Не удалось загрузить голосовое сообщение.")
+		return "", fmt.Errorf("voice file too large: %d bytes", file.FileSize)
 	}
 
 	// build download URL
@@ -59,12 +75,20 @@ func (b *Bot) handleVoice(msg *tgbotapi.Message) (string, error) {
 	}
 	oggPath := tmp.Name()
 
-	if _, err := io.Copy(tmp, resp.Body); err != nil {
+	n, err := io.Copy(tmp, io.LimitReader(resp.Body, maxVoiceFileSize+1))
+	if err != nil {
 		tmp.Close()
 		os.Remove(oggPath)
 		log.Printf("failed to write voice file: %v", err)
 		b.reply(msg, "Не удалось загрузить голосовое сообщение.")
 		return "", fmt.Errorf("write voice file: %w", err)
+	}
+	if n > maxVoiceFileSize {
+		tmp.Close()
+		os.Remove(oggPath)
+		log.Printf("voice file body exceeds size limit: %d bytes read", n)
+		b.reply(msg, "Не удалось загрузить голосовое сообщение.")
+		return "", fmt.Errorf("voice file body too large: %d bytes", n)
 	}
 	if err := tmp.Close(); err != nil {
 		os.Remove(oggPath)
@@ -88,7 +112,16 @@ func (b *Bot) handleVoice(msg *tgbotapi.Message) (string, error) {
 	os.Remove(oggPath)
 
 	log.Printf("voice message converted to %s", wavPath)
-	b.reply(msg, "Голосовое сообщение получено.")
 
-	return wavPath, nil
+	// transcribe WAV to text
+	text, err := b.transcriber.Transcribe(wavPath)
+	os.Remove(wavPath)
+	if err != nil {
+		log.Printf("failed to transcribe voice: %v", err)
+		b.reply(msg, "Не удалось расшифровать сообщение. Попробуйте позже.")
+		return "", fmt.Errorf("transcribe: %w", err)
+	}
+
+	b.reply(msg, text)
+	return text, nil
 }
