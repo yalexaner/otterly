@@ -2,6 +2,8 @@ package bot
 
 import (
 	"log"
+	"os"
+	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/yalexaner/otterly/config"
@@ -9,8 +11,9 @@ import (
 
 // Bot wraps the Telegram bot API client and application config.
 type Bot struct {
-	api *tgbotapi.BotAPI
-	cfg config.Config
+	api          *tgbotapi.BotAPI
+	cfg          config.Config
+	fileEndpoint string
 }
 
 // New creates a new Bot instance using the provided config.
@@ -28,9 +31,13 @@ func newWithEndpoint(cfg config.Config, apiEndpoint string) (*Bot, error) {
 
 	log.Printf("authorized on account %s", api.Self.UserName)
 
+	// derive file endpoint from api endpoint (e.g., /bot%s/%s -> /file/bot%s/%s)
+	fileEndpoint := strings.Replace(apiEndpoint, "/bot%s/%s", "/file/bot%s/%s", 1)
+
 	return &Bot{
-		api: api,
-		cfg: cfg,
+		api:          api,
+		cfg:          cfg,
+		fileEndpoint: fileEndpoint,
 	}, nil
 }
 
@@ -52,7 +59,15 @@ func (b *Bot) Start() {
 			log.Printf("[command] %s from user %d", update.Message.Command(), update.Message.From.ID)
 			b.handleCommand(update.Message)
 		} else if update.Message.Voice != nil {
+			if !update.Message.Chat.IsPrivate() {
+				log.Printf("[voice] ignored non-private chat %d", update.Message.Chat.ID)
+				continue
+			}
 			log.Printf("[voice] from user %d, duration %ds", update.Message.From.ID, update.Message.Voice.Duration)
+			// clean up temp file until a downstream consumer (e.g., transcription) is added
+			if path, err := b.handleVoice(update.Message); err == nil {
+				os.Remove(path)
+			}
 		} else if update.Message.Text != "" {
 			log.Printf("[text] from user %d", update.Message.From.ID)
 		} else {

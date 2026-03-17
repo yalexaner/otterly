@@ -9,7 +9,7 @@ Build order is intentional: core value first (voice transcription), then auth, t
 - [x] Set up project structure, dependencies, .env loading
 - [x] Telegram bot polling loop — receive updates, log message types
 - [x] `/start` and `/help` commands with static Russian responses
-- [ ] Download voice message OGG file from Telegram
+- [x] Download voice message OGG file from Telegram
 - [ ] Convert OGG → WAV PCM 16 kHz mono via ffmpeg
 - [ ] ElevenLabs transcription client (multipart upload, Russian)
 - [ ] End-to-end: voice message → transcript reply
