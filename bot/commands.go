@@ -10,6 +10,7 @@ import (
 func (b *Bot) reply(msg *tgbotapi.Message, text string) {
 	r := tgbotapi.NewMessage(msg.Chat.ID, text)
 	r.ReplyToMessageID = msg.MessageID
+	r.AllowSendingWithoutReply = true
 	if _, err := b.api.Send(r); err != nil {
 		log.Printf("failed to send reply: %v", err)
 	}
