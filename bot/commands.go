@@ -12,14 +12,61 @@ import (
 	"github.com/yalexaner/otterly/store"
 )
 
-// reply sends a text reply to the message that triggered it.
+// maxMessageLength is the Telegram Bot API limit for message text.
+const maxMessageLength = 4096
+
+// reply sends a text reply to the message that triggered it. messages
+// exceeding the Telegram limit are split into multiple chunks.
 func (b *Bot) reply(msg *tgbotapi.Message, text string) {
-	r := tgbotapi.NewMessage(msg.Chat.ID, text)
-	r.ReplyToMessageID = msg.MessageID
-	r.AllowSendingWithoutReply = true
-	if _, err := b.api.Send(r); err != nil {
-		log.Printf("failed to send reply: %v", err)
+	chunks := splitMessage(text, maxMessageLength)
+	for i, chunk := range chunks {
+		r := tgbotapi.NewMessage(msg.Chat.ID, chunk)
+		if i == 0 {
+			r.ReplyToMessageID = msg.MessageID
+			r.AllowSendingWithoutReply = true
+		}
+		if _, err := b.api.Send(r); err != nil {
+			log.Printf("failed to send reply: %v", err)
+		}
 	}
+}
+
+// splitMessage splits text into chunks of at most maxLen runes,
+// preferring to break at newline boundaries.
+func splitMessage(text string, maxLen int) []string {
+	runes := []rune(text)
+	if len(runes) <= maxLen {
+		return []string{text}
+	}
+	var chunks []string
+	for len(runes) > 0 {
+		end := min(maxLen, len(runes))
+		if end < len(runes) {
+			// try to break at last newline within the chunk
+			for i := end - 1; i > 0; i-- {
+				if runes[i] == '\n' {
+					end = i + 1
+					break
+				}
+			}
+		}
+		chunks = append(chunks, string(runes[:end]))
+		runes = runes[end:]
+	}
+	return chunks
+}
+
+// requireAdmin checks that the sender is admin and the chat is private.
+func (b *Bot) requireAdmin(msg *tgbotapi.Message) bool {
+	if !b.isAdmin(msg.From.ID) {
+		b.reply(msg, "Эта команда не поддерживается.")
+		return false
+	}
+	if !msg.Chat.IsPrivate() {
+		b.reply(msg, "Эта команда доступна только в личных сообщениях.")
+		return false
+	}
+	return true
 }
 
 // handleStart handles the /start command with optional invite token.
@@ -51,6 +98,10 @@ func (b *Bot) handleStart(msg *tgbotapi.Message) {
 	}
 
 	err := b.store.RedeemInvite(token, userID, username)
+	if errors.Is(err, store.ErrBlocked) {
+		b.reply(msg, "У вас нет доступа. Обратитесь к администратору.")
+		return
+	}
 	if errors.Is(err, store.ErrInvalidToken) {
 		b.reply(msg, "Недействительная или просроченная ссылка.")
 		return
@@ -75,8 +126,7 @@ func (b *Bot) requireStore(msg *tgbotapi.Message) bool {
 
 // handleAllow handles the /allow command to add a user to the whitelist.
 func (b *Bot) handleAllow(msg *tgbotapi.Message) {
-	if !b.isAdmin(msg.From.ID) {
-		b.reply(msg, "Эта команда не поддерживается.")
+	if !b.requireAdmin(msg) {
 		return
 	}
 	if !b.requireStore(msg) {
@@ -106,8 +156,7 @@ func (b *Bot) handleAllow(msg *tgbotapi.Message) {
 
 // handleDeny handles the /deny command to block a user.
 func (b *Bot) handleDeny(msg *tgbotapi.Message) {
-	if !b.isAdmin(msg.From.ID) {
-		b.reply(msg, "Эта команда не поддерживается.")
+	if !b.requireAdmin(msg) {
 		return
 	}
 	if !b.requireStore(msg) {
@@ -145,8 +194,7 @@ func (b *Bot) handleDeny(msg *tgbotapi.Message) {
 
 // handleList handles the /list command to show all registered users.
 func (b *Bot) handleList(msg *tgbotapi.Message) {
-	if !b.isAdmin(msg.From.ID) {
-		b.reply(msg, "Эта команда не поддерживается.")
+	if !b.requireAdmin(msg) {
 		return
 	}
 	if !b.requireStore(msg) {
@@ -178,8 +226,7 @@ func (b *Bot) handleList(msg *tgbotapi.Message) {
 
 // handleInvite handles the /invite command to generate an invite link.
 func (b *Bot) handleInvite(msg *tgbotapi.Message) {
-	if !b.isAdmin(msg.From.ID) {
-		b.reply(msg, "Эта команда не поддерживается.")
+	if !b.requireAdmin(msg) {
 		return
 	}
 	if !b.requireStore(msg) {

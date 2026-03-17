@@ -524,6 +524,38 @@ func TestRedeemInvite_AlreadyUsedToken(t *testing.T) {
 	}
 }
 
+func TestRedeemInvite_BlockedUser(t *testing.T) {
+	s := newTestStore(t)
+
+	// create and block a user
+	if err := s.AllowUser(100, 1); err != nil {
+		t.Fatalf("AllowUser: %v", err)
+	}
+	if err := s.BlockUser(100); err != nil {
+		t.Fatalf("BlockUser: %v", err)
+	}
+
+	expires := time.Now().Add(DefaultInviteTTL)
+	if err := s.CreateInvite("blocked-user-token", 42, expires); err != nil {
+		t.Fatalf("CreateInvite: %v", err)
+	}
+
+	// blocked user should not be able to redeem
+	err := s.RedeemInvite("blocked-user-token", 100, "alice")
+	if !errors.Is(err, ErrBlocked) {
+		t.Errorf("err = %v, want ErrBlocked", err)
+	}
+
+	// user should still be blocked
+	active, err := s.IsActive(100)
+	if err != nil {
+		t.Fatalf("IsActive: %v", err)
+	}
+	if active {
+		t.Error("blocked user should remain blocked after failed redeem")
+	}
+}
+
 func TestRedeemInvite_UserAlreadyExists(t *testing.T) {
 	s := newTestStore(t)
 	// create an existing user

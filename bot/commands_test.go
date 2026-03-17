@@ -105,11 +105,98 @@ func commandMessage(chatID int64, userID int64, text string) *tgbotapi.Message {
 	return &tgbotapi.Message{
 		MessageID: 50,
 		From:      &tgbotapi.User{ID: userID},
-		Chat:      &tgbotapi.Chat{ID: chatID},
+		Chat:      &tgbotapi.Chat{ID: chatID, Type: "private"},
 		Text:      text,
 		Entities: []tgbotapi.MessageEntity{
 			{Type: "bot_command", Offset: 0, Length: cmdLen},
 		},
+	}
+}
+
+func TestSplitMessage_Short(t *testing.T) {
+	chunks := splitMessage("hello", 4096)
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(chunks))
+	}
+	if chunks[0] != "hello" {
+		t.Errorf("chunk = %q, want %q", chunks[0], "hello")
+	}
+}
+
+func TestSplitMessage_ExactLimit(t *testing.T) {
+	text := strings.Repeat("a", 4096)
+	chunks := splitMessage(text, 4096)
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(chunks))
+	}
+	if len([]rune(chunks[0])) != 4096 {
+		t.Errorf("chunk length = %d, want 4096", len([]rune(chunks[0])))
+	}
+}
+
+func TestSplitMessage_SplitsAtNewline(t *testing.T) {
+	// 10-char limit: "abcde\nfgh" is 9 runes, fits in one chunk
+	// but "abcde\nfghij" is 11 runes, must split
+	text := "abcde\nfghij"
+	chunks := splitMessage(text, 10)
+	if len(chunks) != 2 {
+		t.Fatalf("expected 2 chunks, got %d: %v", len(chunks), chunks)
+	}
+	// should split after newline
+	if chunks[0] != "abcde\n" {
+		t.Errorf("chunk[0] = %q, want %q", chunks[0], "abcde\n")
+	}
+	if chunks[1] != "fghij" {
+		t.Errorf("chunk[1] = %q, want %q", chunks[1], "fghij")
+	}
+}
+
+func TestSplitMessage_NoNewlineFallback(t *testing.T) {
+	// no newline — must hard-split at maxLen
+	text := strings.Repeat("x", 15)
+	chunks := splitMessage(text, 10)
+	if len(chunks) != 2 {
+		t.Fatalf("expected 2 chunks, got %d", len(chunks))
+	}
+	if len([]rune(chunks[0])) != 10 {
+		t.Errorf("chunk[0] length = %d, want 10", len([]rune(chunks[0])))
+	}
+	if len([]rune(chunks[1])) != 5 {
+		t.Errorf("chunk[1] length = %d, want 5", len([]rune(chunks[1])))
+	}
+}
+
+func TestSplitMessage_MultipleChunks(t *testing.T) {
+	// 3 chunks worth of text
+	text := strings.Repeat("a", 25)
+	chunks := splitMessage(text, 10)
+	if len(chunks) != 3 {
+		t.Fatalf("expected 3 chunks, got %d", len(chunks))
+	}
+	for i, c := range chunks {
+		got := len([]rune(c))
+		want := 10
+		if i == 2 {
+			want = 5
+		}
+		if got != want {
+			t.Errorf("chunk[%d] length = %d, want %d", i, got, want)
+		}
+	}
+}
+
+func TestSplitMessage_UnicodeRunes(t *testing.T) {
+	// each cyrillic char is one rune but multiple bytes
+	text := strings.Repeat("Б", 15)
+	chunks := splitMessage(text, 10)
+	if len(chunks) != 2 {
+		t.Fatalf("expected 2 chunks, got %d", len(chunks))
+	}
+	if len([]rune(chunks[0])) != 10 {
+		t.Errorf("chunk[0] rune length = %d, want 10", len([]rune(chunks[0])))
+	}
+	if len([]rune(chunks[1])) != 5 {
+		t.Errorf("chunk[1] rune length = %d, want 5", len([]rune(chunks[1])))
 	}
 }
 
@@ -243,6 +330,48 @@ func TestHandleStart_ValidToken_Unauthorized(t *testing.T) {
 	}
 	if !active {
 		t.Error("user should be active after redeeming invite")
+	}
+}
+
+func TestHandleStart_BlockedUserWithToken(t *testing.T) {
+	server, captured := newCaptureServer(t)
+	defer server.Close()
+	s := openTestStore(t)
+	defer func() { _ = s.Close() }()
+
+	// create, then block user
+	if err := s.AllowUser(99999, 12345); err != nil {
+		t.Fatalf("AllowUser: %v", err)
+	}
+	if err := s.BlockUser(99999); err != nil {
+		t.Fatalf("BlockUser: %v", err)
+	}
+
+	// create an invite token
+	token := "blocked-user-invite"
+	if err := s.CreateInvite(token, 12345, time.Now().Add(store.DefaultInviteTTL)); err != nil {
+		t.Fatalf("CreateInvite: %v", err)
+	}
+
+	b := newTestBotWithStore(t, server, s)
+	msg := commandMessage(42, 99999, "/start "+token)
+	b.handleCommand(msg)
+
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 sent message, got %d", len(*captured))
+	}
+	want := "У вас нет доступа. Обратитесь к администратору."
+	if (*captured)[0].Text != want {
+		t.Errorf("text = %q, want %q", (*captured)[0].Text, want)
+	}
+
+	// verify user is still blocked
+	active, err := s.IsActive(99999)
+	if err != nil {
+		t.Fatalf("IsActive error: %v", err)
+	}
+	if active {
+		t.Error("blocked user should remain blocked after invite attempt")
 	}
 }
 
@@ -652,6 +781,26 @@ func TestHandleInvite_StoreError(t *testing.T) {
 		t.Fatalf("expected 1 sent message, got %d", len(*captured))
 	}
 	want := "Ошибка при создании приглашения."
+	if (*captured)[0].Text != want {
+		t.Errorf("text = %q, want %q", (*captured)[0].Text, want)
+	}
+}
+
+func TestAdminCommand_RejectedInGroupChat(t *testing.T) {
+	server, captured := newCaptureServer(t)
+	defer server.Close()
+	s := openTestStore(t)
+	defer func() { _ = s.Close() }()
+
+	b := newTestBotWithStore(t, server, s)
+	msg := commandMessage(42, 12345, "/list")
+	msg.Chat.Type = "group"
+	b.handleCommand(msg)
+
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 sent message, got %d", len(*captured))
+	}
+	want := "Эта команда доступна только в личных сообщениях."
 	if (*captured)[0].Text != want {
 		t.Errorf("text = %q, want %q", (*captured)[0].Text, want)
 	}

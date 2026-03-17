@@ -29,6 +29,9 @@ var ErrNotFound = errors.New("user not found")
 // ErrInvalidToken is returned when an invite token is not found, expired, or already used.
 var ErrInvalidToken = errors.New("invalid or expired invite token")
 
+// ErrBlocked is returned when a blocked user attempts to redeem an invite.
+var ErrBlocked = errors.New("user is blocked")
+
 // Store wraps a SQLite database connection for user and invite management.
 type Store struct {
 	db *sql.DB
@@ -242,6 +245,18 @@ func (s *Store) RedeemInvite(token string, userID int64, username string) error 
 		return ErrInvalidToken
 	}
 
+	// blocked users cannot redeem invites — admin's /deny decision takes priority
+	var userStatus sql.NullString
+	err = tx.QueryRow(
+		"SELECT status FROM users WHERE telegram_user_id = ?", userID,
+	).Scan(&userStatus)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("redeem invite check user: %w", err)
+	}
+	if userStatus.Valid && userStatus.String == "blocked" {
+		return ErrBlocked
+	}
+
 	_, err = tx.Exec(
 		`INSERT INTO users (telegram_user_id, username, status, added_by)
 		 VALUES (?, ?, 'active', 0)
@@ -253,12 +268,19 @@ func (s *Store) RedeemInvite(token string, userID int64, username string) error 
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
-	_, err = tx.Exec(
-		"UPDATE invites SET used_by = ?, used_at = ? WHERE token = ?",
+	res, err := tx.Exec(
+		"UPDATE invites SET used_by = ?, used_at = ? WHERE token = ? AND used_by IS NULL",
 		userID, now, token,
 	)
 	if err != nil {
 		return fmt.Errorf("redeem invite update: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("redeem invite rows affected: %w", err)
+	}
+	if n == 0 {
+		return ErrInvalidToken
 	}
 
 	if err := tx.Commit(); err != nil {
