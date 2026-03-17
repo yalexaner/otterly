@@ -1,12 +1,18 @@
 package store
 
 import (
+	"crypto/rand"
 	"database/sql"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
+
+// DefaultInviteTTL is the default time-to-live for invite tokens.
+const DefaultInviteTTL = 72 * time.Hour
 
 // User represents a registered bot user.
 type User struct {
@@ -19,6 +25,9 @@ type User struct {
 
 // ErrNotFound is returned when a user does not exist.
 var ErrNotFound = errors.New("user not found")
+
+// ErrInvalidToken is returned when an invite token is not found, expired, or already used.
+var ErrInvalidToken = errors.New("invalid or expired invite token")
 
 // Store wraps a SQLite database connection for user and invite management.
 type Store struct {
@@ -177,4 +186,83 @@ func (s *Store) ListUsers() ([]User, error) {
 		return nil, fmt.Errorf("iterate users: %w", err)
 	}
 	return users, nil
+}
+
+// GenerateToken creates a cryptographically random URL-safe token (22 chars).
+func GenerateToken() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generate token: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// CreateInvite inserts a new invite record.
+func (s *Store) CreateInvite(token string, createdBy int64, expiresAt time.Time) error {
+	_, err := s.db.Exec(
+		"INSERT INTO invites (token, created_by, expires_at) VALUES (?, ?, ?)",
+		token, createdBy, expiresAt.UTC().Format(time.RFC3339),
+	)
+	if err != nil {
+		return fmt.Errorf("create invite: %w", err)
+	}
+	return nil
+}
+
+// RedeemInvite validates the token and creates a user in a single transaction.
+// Returns ErrInvalidToken if the token does not exist, is expired, or was already used.
+func (s *Store) RedeemInvite(token string, userID int64, username string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("redeem invite begin: %w", err)
+	}
+	defer tx.Rollback()
+
+	var expiresAt string
+	var usedBy sql.NullInt64
+	err = tx.QueryRow(
+		"SELECT expires_at, used_by FROM invites WHERE token = ?", token,
+	).Scan(&expiresAt, &usedBy)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrInvalidToken
+	}
+	if err != nil {
+		return fmt.Errorf("redeem invite select: %w", err)
+	}
+
+	if usedBy.Valid {
+		return ErrInvalidToken
+	}
+
+	exp, err := time.Parse(time.RFC3339, expiresAt)
+	if err != nil {
+		return fmt.Errorf("redeem invite parse expiry: %w", err)
+	}
+	if time.Now().UTC().After(exp) {
+		return ErrInvalidToken
+	}
+
+	_, err = tx.Exec(
+		`INSERT INTO users (telegram_user_id, username, status, added_by)
+		 VALUES (?, ?, 'active', 0)
+		 ON CONFLICT(telegram_user_id) DO UPDATE SET status = 'active', username = ?`,
+		userID, username, username,
+	)
+	if err != nil {
+		return fmt.Errorf("redeem invite insert user: %w", err)
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err = tx.Exec(
+		"UPDATE invites SET used_by = ?, used_at = ? WHERE token = ?",
+		userID, now, token,
+	)
+	if err != nil {
+		return fmt.Errorf("redeem invite update: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("redeem invite commit: %w", err)
+	}
+	return nil
 }

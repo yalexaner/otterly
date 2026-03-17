@@ -1,7 +1,10 @@
 package store
 
 import (
+	"encoding/base64"
+	"errors"
 	"testing"
+	"time"
 )
 
 func TestOpen_SetsWALMode(t *testing.T) {
@@ -377,5 +380,173 @@ func TestListUsers_Multiple_OrderedByAddedAt(t *testing.T) {
 		if users[i].TelegramUserID != want {
 			t.Errorf("users[%d].TelegramUserID = %d, want %d", i, users[i].TelegramUserID, want)
 		}
+	}
+}
+
+// --- GenerateToken tests ---
+
+func TestGenerateToken_LengthAndEncoding(t *testing.T) {
+	token, err := GenerateToken()
+	if err != nil {
+		t.Fatalf("GenerateToken: %v", err)
+	}
+	// 16 bytes in base64 RawURL = 22 chars
+	if len(token) != 22 {
+		t.Errorf("token length = %d, want 22", len(token))
+	}
+	// must be valid base64 RawURL
+	_, err = base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		t.Errorf("token is not valid base64 RawURL: %v", err)
+	}
+}
+
+func TestGenerateToken_Uniqueness(t *testing.T) {
+	tokens := make(map[string]bool)
+	for range 100 {
+		token, err := GenerateToken()
+		if err != nil {
+			t.Fatalf("GenerateToken: %v", err)
+		}
+		if tokens[token] {
+			t.Fatalf("duplicate token: %s", token)
+		}
+		tokens[token] = true
+	}
+}
+
+// --- CreateInvite tests ---
+
+func TestCreateInvite_Success(t *testing.T) {
+	s := newTestStore(t)
+	expires := time.Now().Add(DefaultInviteTTL)
+
+	if err := s.CreateInvite("test-token", 42, expires); err != nil {
+		t.Fatalf("CreateInvite: %v", err)
+	}
+
+	var token string
+	var createdBy int64
+	err := s.db.QueryRow("SELECT token, created_by FROM invites WHERE token = ?", "test-token").Scan(&token, &createdBy)
+	if err != nil {
+		t.Fatalf("query invite: %v", err)
+	}
+	if createdBy != 42 {
+		t.Errorf("created_by = %d, want 42", createdBy)
+	}
+}
+
+func TestCreateInvite_DuplicateTokenError(t *testing.T) {
+	s := newTestStore(t)
+	expires := time.Now().Add(DefaultInviteTTL)
+
+	if err := s.CreateInvite("dup-token", 42, expires); err != nil {
+		t.Fatalf("CreateInvite: %v", err)
+	}
+	err := s.CreateInvite("dup-token", 42, expires)
+	if err == nil {
+		t.Fatal("expected error on duplicate token, got nil")
+	}
+}
+
+// --- RedeemInvite tests ---
+
+func TestRedeemInvite_Success(t *testing.T) {
+	s := newTestStore(t)
+	expires := time.Now().Add(DefaultInviteTTL)
+	if err := s.CreateInvite("redeem-ok", 42, expires); err != nil {
+		t.Fatalf("CreateInvite: %v", err)
+	}
+
+	if err := s.RedeemInvite("redeem-ok", 100, "alice"); err != nil {
+		t.Fatalf("RedeemInvite: %v", err)
+	}
+
+	// user should exist and be active
+	active, err := s.IsActive(100)
+	if err != nil {
+		t.Fatalf("IsActive: %v", err)
+	}
+	if !active {
+		t.Error("user should be active after redeem")
+	}
+
+	// invite should be marked as used
+	var usedBy int64
+	err = s.db.QueryRow("SELECT used_by FROM invites WHERE token = ?", "redeem-ok").Scan(&usedBy)
+	if err != nil {
+		t.Fatalf("query used_by: %v", err)
+	}
+	if usedBy != 100 {
+		t.Errorf("used_by = %d, want 100", usedBy)
+	}
+}
+
+func TestRedeemInvite_TokenNotFound(t *testing.T) {
+	s := newTestStore(t)
+
+	err := s.RedeemInvite("nonexistent", 100, "alice")
+	if !errors.Is(err, ErrInvalidToken) {
+		t.Errorf("err = %v, want ErrInvalidToken", err)
+	}
+}
+
+func TestRedeemInvite_ExpiredToken(t *testing.T) {
+	s := newTestStore(t)
+	// create an already-expired invite
+	expired := time.Now().Add(-1 * time.Hour)
+	if err := s.CreateInvite("expired-token", 42, expired); err != nil {
+		t.Fatalf("CreateInvite: %v", err)
+	}
+
+	err := s.RedeemInvite("expired-token", 100, "alice")
+	if !errors.Is(err, ErrInvalidToken) {
+		t.Errorf("err = %v, want ErrInvalidToken", err)
+	}
+}
+
+func TestRedeemInvite_AlreadyUsedToken(t *testing.T) {
+	s := newTestStore(t)
+	expires := time.Now().Add(DefaultInviteTTL)
+	if err := s.CreateInvite("used-token", 42, expires); err != nil {
+		t.Fatalf("CreateInvite: %v", err)
+	}
+
+	// first redeem succeeds
+	if err := s.RedeemInvite("used-token", 100, "alice"); err != nil {
+		t.Fatalf("RedeemInvite (first): %v", err)
+	}
+
+	// second redeem should fail
+	err := s.RedeemInvite("used-token", 200, "bob")
+	if !errors.Is(err, ErrInvalidToken) {
+		t.Errorf("err = %v, want ErrInvalidToken", err)
+	}
+}
+
+func TestRedeemInvite_UserAlreadyExists(t *testing.T) {
+	s := newTestStore(t)
+	// create an existing user
+	if err := s.AllowUser(100, 1); err != nil {
+		t.Fatalf("AllowUser: %v", err)
+	}
+
+	expires := time.Now().Add(DefaultInviteTTL)
+	if err := s.CreateInvite("existing-user-token", 42, expires); err != nil {
+		t.Fatalf("CreateInvite: %v", err)
+	}
+
+	// redeem should succeed (ON CONFLICT updates)
+	if err := s.RedeemInvite("existing-user-token", 100, "alice"); err != nil {
+		t.Fatalf("RedeemInvite: %v", err)
+	}
+
+	// user should still be active
+	active, err := s.IsActive(100)
+	if err != nil {
+		t.Fatalf("IsActive: %v", err)
+	}
+	if !active {
+		t.Error("existing user should remain active after redeem")
 	}
 }
