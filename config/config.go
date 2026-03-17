@@ -33,6 +33,10 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("TELEGRAM_BOT_TOKEN is required but not set")
 	}
 
+	if cfg.ElevenLabsAPIKey == "" {
+		return Config{}, fmt.Errorf("ELEVENLABS_API_KEY is required but not set")
+	}
+
 	if raw := os.Getenv("TELEGRAM_ADMIN_ID"); raw != "" {
 		id, err := strconv.ParseInt(raw, 10, 64)
 		if err != nil {
