@@ -67,6 +67,7 @@ No transcripts are stored. Privacy by design.
 | `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather |
 | `TELEGRAM_ADMIN_ID` | Admin's Telegram user ID |
 | `ELEVENLABS_API_KEY` | ElevenLabs API key |
+| `DATABASE_PATH` | SQLite database path (default: `otterly.db`) |
 
 ## Bot Messages (Russian)
 

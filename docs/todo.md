@@ -19,16 +19,16 @@ Build order is intentional: core value first (voice transcription), then auth, t
 
 ## Phase 2 — Database & Auth
 
-- [ ] SQLite setup with WAL mode
-- [ ] Create `users` and `invites` tables on startup
-- [ ] Seed admin user from `TELEGRAM_ADMIN_ID`
-- [ ] Auth check: block non-active users from using the bot
-- [ ] `/allow <user_id>` — admin adds user
-- [ ] `/deny <user_id>` — admin blocks user
-- [ ] `/list` — admin sees all users
-- [ ] `/invite` — admin generates one-time token
-- [ ] `/start <token>` — user self-registers with invite
-- [ ] Hide admin commands from regular users
+- [x] SQLite setup with WAL mode
+- [x] Create `users` and `invites` tables on startup
+- [x] Seed admin user from `TELEGRAM_ADMIN_ID`
+- [x] Auth check: block non-active users from using the bot
+- [x] `/allow <user_id>` — admin adds user
+- [x] `/deny <user_id>` — admin blocks user
+- [x] `/list` — admin sees all users
+- [x] `/invite` — admin generates one-time token
+- [x] `/start <token>` — user self-registers with invite
+- [x] Hide admin commands from regular users
 
 ## Phase 3 — Error Handling & Resilience
 
