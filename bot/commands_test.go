@@ -488,6 +488,175 @@ func TestHandleDeny_SelfDeny(t *testing.T) {
 	}
 }
 
+func TestHandleList_AdminWithUsers(t *testing.T) {
+	server, captured := newCaptureServer(t)
+	defer server.Close()
+	s := openTestStore(t)
+	defer s.Close()
+
+	// add users with known usernames
+	if err := s.AllowUser(111, 12345); err != nil {
+		t.Fatalf("AllowUser: %v", err)
+	}
+	// add a user with a username by redeeming an invite
+	token := "list-test-token"
+	if err := s.CreateInvite(token, 12345, time.Now().Add(store.DefaultInviteTTL)); err != nil {
+		t.Fatalf("CreateInvite: %v", err)
+	}
+	if err := s.RedeemInvite(token, 222, "alice"); err != nil {
+		t.Fatalf("RedeemInvite: %v", err)
+	}
+
+	b := newTestBotWithStore(t, server, s)
+	msg := commandMessage(42, 12345, "/list")
+	b.handleCommand(msg)
+
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 sent message, got %d", len(*captured))
+	}
+	text := (*captured)[0].Text
+	// user 111 has no username
+	if !strings.Contains(text, "111") {
+		t.Errorf("expected text to contain user 111, got %q", text)
+	}
+	// user 222 has username alice
+	if !strings.Contains(text, "@alice") {
+		t.Errorf("expected text to contain @alice, got %q", text)
+	}
+	if !strings.Contains(text, "active") {
+		t.Errorf("expected text to contain status 'active', got %q", text)
+	}
+}
+
+func TestHandleList_AdminEmpty(t *testing.T) {
+	server, captured := newCaptureServer(t)
+	defer server.Close()
+	s := openTestStore(t)
+	defer s.Close()
+
+	b := newTestBotWithStore(t, server, s)
+	msg := commandMessage(42, 12345, "/list")
+	b.handleCommand(msg)
+
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 sent message, got %d", len(*captured))
+	}
+	want := "Нет зарегистрированных пользователей."
+	if (*captured)[0].Text != want {
+		t.Errorf("text = %q, want %q", (*captured)[0].Text, want)
+	}
+}
+
+func TestHandleList_NonAdmin(t *testing.T) {
+	server, captured := newCaptureServer(t)
+	defer server.Close()
+	s := openTestStore(t)
+	defer s.Close()
+
+	if err := s.AllowUser(99999, 12345); err != nil {
+		t.Fatalf("AllowUser: %v", err)
+	}
+
+	b := newTestBotWithStore(t, server, s)
+	msg := commandMessage(42, 99999, "/list")
+	b.handleCommand(msg)
+
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 sent message, got %d", len(*captured))
+	}
+	want := "Эта команда не поддерживается."
+	if (*captured)[0].Text != want {
+		t.Errorf("text = %q, want %q", (*captured)[0].Text, want)
+	}
+}
+
+func TestHandleList_StoreError(t *testing.T) {
+	server, captured := newCaptureServer(t)
+	defer server.Close()
+	s := openTestStore(t)
+
+	// close the store to force an error
+	s.Close()
+
+	b := newTestBotWithStore(t, server, s)
+	msg := commandMessage(42, 12345, "/list")
+	b.handleCommand(msg)
+
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 sent message, got %d", len(*captured))
+	}
+	want := "Ошибка при получении списка пользователей."
+	if (*captured)[0].Text != want {
+		t.Errorf("text = %q, want %q", (*captured)[0].Text, want)
+	}
+}
+
+func TestHandleInvite_AdminSuccess(t *testing.T) {
+	server, captured := newCaptureServer(t)
+	defer server.Close()
+	s := openTestStore(t)
+	defer s.Close()
+
+	b := newTestBotWithStore(t, server, s)
+	msg := commandMessage(42, 12345, "/invite")
+	b.handleCommand(msg)
+
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 sent message, got %d", len(*captured))
+	}
+	text := (*captured)[0].Text
+	if !strings.Contains(text, "https://t.me/test_bot?start=") {
+		t.Errorf("expected deep link in reply, got %q", text)
+	}
+	if !strings.Contains(text, "72 ч") {
+		t.Errorf("expected expiration note in reply, got %q", text)
+	}
+}
+
+func TestHandleInvite_NonAdmin(t *testing.T) {
+	server, captured := newCaptureServer(t)
+	defer server.Close()
+	s := openTestStore(t)
+	defer s.Close()
+
+	if err := s.AllowUser(99999, 12345); err != nil {
+		t.Fatalf("AllowUser: %v", err)
+	}
+
+	b := newTestBotWithStore(t, server, s)
+	msg := commandMessage(42, 99999, "/invite")
+	b.handleCommand(msg)
+
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 sent message, got %d", len(*captured))
+	}
+	want := "Эта команда не поддерживается."
+	if (*captured)[0].Text != want {
+		t.Errorf("text = %q, want %q", (*captured)[0].Text, want)
+	}
+}
+
+func TestHandleInvite_StoreError(t *testing.T) {
+	server, captured := newCaptureServer(t)
+	defer server.Close()
+	s := openTestStore(t)
+
+	// close the store to force an error
+	s.Close()
+
+	b := newTestBotWithStore(t, server, s)
+	msg := commandMessage(42, 12345, "/invite")
+	b.handleCommand(msg)
+
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 sent message, got %d", len(*captured))
+	}
+	want := "Ошибка при создании приглашения."
+	if (*captured)[0].Text != want {
+		t.Errorf("text = %q, want %q", (*captured)[0].Text, want)
+	}
+}
+
 func TestHandleDeny_UserNotFound(t *testing.T) {
 	server, captured := newCaptureServer(t)
 	defer server.Close()

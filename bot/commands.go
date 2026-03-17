@@ -6,6 +6,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/yalexaner/otterly/store"
@@ -127,6 +128,61 @@ func (b *Bot) handleDeny(msg *tgbotapi.Message) {
 	b.reply(msg, fmt.Sprintf("Пользователь %d заблокирован.", userID))
 }
 
+// handleList handles the /list command to show all registered users.
+func (b *Bot) handleList(msg *tgbotapi.Message) {
+	if !b.isAdmin(msg.From.ID) {
+		b.reply(msg, "Эта команда не поддерживается.")
+		return
+	}
+
+	users, err := b.store.ListUsers()
+	if err != nil {
+		log.Printf("failed to list users: %v", err)
+		b.reply(msg, "Ошибка при получении списка пользователей.")
+		return
+	}
+
+	if len(users) == 0 {
+		b.reply(msg, "Нет зарегистрированных пользователей.")
+		return
+	}
+
+	var sb strings.Builder
+	for _, u := range users {
+		if u.Username != "" {
+			fmt.Fprintf(&sb, "@%s (%d) — %s\n", u.Username, u.TelegramUserID, u.Status)
+		} else {
+			fmt.Fprintf(&sb, "%d — %s\n", u.TelegramUserID, u.Status)
+		}
+	}
+	b.reply(msg, strings.TrimRight(sb.String(), "\n"))
+}
+
+// handleInvite handles the /invite command to generate an invite link.
+func (b *Bot) handleInvite(msg *tgbotapi.Message) {
+	if !b.isAdmin(msg.From.ID) {
+		b.reply(msg, "Эта команда не поддерживается.")
+		return
+	}
+
+	token, err := store.GenerateToken()
+	if err != nil {
+		log.Printf("failed to generate invite token: %v", err)
+		b.reply(msg, "Ошибка при создании приглашения.")
+		return
+	}
+
+	expiresAt := time.Now().Add(store.DefaultInviteTTL)
+	if err := b.store.CreateInvite(token, msg.From.ID, expiresAt); err != nil {
+		log.Printf("failed to create invite: %v", err)
+		b.reply(msg, "Ошибка при создании приглашения.")
+		return
+	}
+
+	link := fmt.Sprintf("https://t.me/%s?start=%s", b.api.Self.UserName, token)
+	b.reply(msg, fmt.Sprintf("Ссылка-приглашение (действует 72 ч):\n%s", link))
+}
+
 // handleCommand dispatches the command to the appropriate handler.
 func (b *Bot) handleCommand(msg *tgbotapi.Message) {
 	switch msg.Command() {
@@ -138,6 +194,10 @@ func (b *Bot) handleCommand(msg *tgbotapi.Message) {
 		b.handleAllow(msg)
 	case "deny":
 		b.handleDeny(msg)
+	case "list":
+		b.handleList(msg)
+	case "invite":
+		b.handleInvite(msg)
 	default:
 		b.reply(msg, "Эта команда не поддерживается.")
 	}
