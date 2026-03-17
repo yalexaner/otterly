@@ -2,6 +2,7 @@ package bot
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -101,12 +102,39 @@ func voiceMessage(chatID int64, fileID string, duration int) *tgbotapi.Message {
 	}
 }
 
+// mockConverter returns a converter that creates a WAV temp file with the given content.
+func mockConverter(t *testing.T) func(string) (string, error) {
+	t.Helper()
+	return func(inputPath string) (string, error) {
+		tmp, err := os.CreateTemp("", "test-*.wav")
+		if err != nil {
+			t.Fatal(err)
+		}
+		tmp.Write([]byte("fake-wav-data"))
+		tmp.Close()
+		return tmp.Name(), nil
+	}
+}
+
 func TestHandleVoice_Success(t *testing.T) {
 	fakeOGG := []byte("fake-ogg-data")
 	server, captured := newVoiceServer(t, voiceServerOpts{fileContent: fakeOGG})
 	defer server.Close()
 
 	b := newTestBotWithCapture(t, server)
+
+	var convertedInput string
+	b.convertToWAV = func(inputPath string) (string, error) {
+		convertedInput = inputPath
+		tmp, err := os.CreateTemp("", "test-*.wav")
+		if err != nil {
+			t.Fatal(err)
+		}
+		tmp.Write([]byte("fake-wav-data"))
+		tmp.Close()
+		return tmp.Name(), nil
+	}
+
 	msg := voiceMessage(42, "test-file-id", 5)
 
 	path, err := b.handleVoice(msg)
@@ -117,18 +145,22 @@ func TestHandleVoice_Success(t *testing.T) {
 	// temp file cleanup is caller's responsibility; clean up here for the test
 	defer os.Remove(path)
 
-	// verify temp file has correct content
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("failed to read temp file: %v", err)
-	}
-	if string(data) != string(fakeOGG) {
-		t.Errorf("file content = %q, want %q", data, fakeOGG)
+	// verify WAV output
+	if !strings.HasSuffix(path, ".wav") {
+		t.Errorf("temp file path %q does not end with .wav", path)
 	}
 
-	// verify .ogg extension
-	if !strings.HasSuffix(path, ".ogg") {
-		t.Errorf("temp file path %q does not end with .ogg", path)
+	// verify conversion was called with OGG path
+	if convertedInput == "" {
+		t.Fatal("convertToWAV was not called")
+	}
+	if !strings.HasSuffix(convertedInput, ".ogg") {
+		t.Errorf("conversion input %q does not end with .ogg", convertedInput)
+	}
+
+	// verify OGG temp file was cleaned up
+	if _, err := os.Stat(convertedInput); !os.IsNotExist(err) {
+		t.Errorf("OGG temp file %q was not cleaned up", convertedInput)
 	}
 
 	// verify confirmation reply was sent
@@ -228,12 +260,59 @@ func TestHandleVoice_TooLong(t *testing.T) {
 	}
 }
 
+func TestHandleVoice_ConversionFails(t *testing.T) {
+	fakeOGG := []byte("fake-ogg-data")
+	server, captured := newVoiceServer(t, voiceServerOpts{fileContent: fakeOGG})
+	defer server.Close()
+
+	b := newTestBotWithCapture(t, server)
+
+	var convertedInput string
+	b.convertToWAV = func(inputPath string) (string, error) {
+		convertedInput = inputPath
+		return "", fmt.Errorf("ffmpeg not found")
+	}
+
+	msg := voiceMessage(42, "test-file-id", 5)
+	path, err := b.handleVoice(msg)
+	if err == nil {
+		t.Fatal("expected error when conversion fails, got nil")
+	}
+	if path != "" {
+		os.Remove(path)
+		t.Errorf("expected empty path, got %q", path)
+	}
+	if !strings.Contains(err.Error(), "convert to wav") {
+		t.Errorf("error = %q, want it to contain 'convert to wav'", err)
+	}
+
+	// verify OGG temp file was cleaned up despite conversion failure
+	if convertedInput == "" {
+		t.Fatal("convertToWAV was not called")
+	}
+	if _, err := os.Stat(convertedInput); !os.IsNotExist(err) {
+		t.Errorf("OGG temp file %q was not cleaned up after conversion failure", convertedInput)
+	}
+
+	// verify error reply was sent (different from download error message)
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 reply, got %d", len(*captured))
+	}
+	if (*captured)[0].Text != "Не удалось обработать голосовое сообщение." {
+		t.Errorf("reply = %q, want conversion error message", (*captured)[0].Text)
+	}
+	if (*captured)[0].ChatID != 42 {
+		t.Errorf("reply chat ID = %d, want 42", (*captured)[0].ChatID)
+	}
+}
+
 func TestHandleVoice_ExactLimit(t *testing.T) {
 	fakeOGG := []byte("fake-ogg-data")
 	server, captured := newVoiceServer(t, voiceServerOpts{fileContent: fakeOGG})
 	defer server.Close()
 
 	b := newTestBotWithCapture(t, server)
+	b.convertToWAV = mockConverter(t)
 	msg := voiceMessage(42, "test-file-id", 90)
 
 	path, err := b.handleVoice(msg)
@@ -242,13 +321,9 @@ func TestHandleVoice_ExactLimit(t *testing.T) {
 	}
 	defer os.Remove(path)
 
-	// verify file was downloaded (not rejected)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("failed to read temp file: %v", err)
-	}
-	if string(data) != string(fakeOGG) {
-		t.Errorf("file content = %q, want %q", data, fakeOGG)
+	// verify WAV output (not rejected)
+	if !strings.HasSuffix(path, ".wav") {
+		t.Errorf("path %q does not end with .wav", path)
 	}
 
 	// verify confirmation reply (not rejection)

@@ -57,17 +57,38 @@ func (b *Bot) handleVoice(msg *tgbotapi.Message) (string, error) {
 		b.reply(msg, "Не удалось загрузить голосовое сообщение.")
 		return "", fmt.Errorf("create temp file: %w", err)
 	}
-	defer tmp.Close()
+	oggPath := tmp.Name()
 
 	if _, err := io.Copy(tmp, resp.Body); err != nil {
-		os.Remove(tmp.Name())
+		tmp.Close()
+		os.Remove(oggPath)
 		log.Printf("failed to write voice file: %v", err)
 		b.reply(msg, "Не удалось загрузить голосовое сообщение.")
 		return "", fmt.Errorf("write voice file: %w", err)
 	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(oggPath)
+		log.Printf("failed to flush voice file: %v", err)
+		b.reply(msg, "Не удалось загрузить голосовое сообщение.")
+		return "", fmt.Errorf("close voice file: %w", err)
+	}
 
-	log.Printf("voice message downloaded to %s", tmp.Name())
+	log.Printf("voice message downloaded to %s", oggPath)
+
+	// convert OGG to WAV
+	wavPath, err := b.convertToWAV(oggPath)
+	if err != nil {
+		os.Remove(oggPath)
+		log.Printf("failed to convert voice file: %v", err)
+		b.reply(msg, "Не удалось обработать голосовое сообщение.")
+		return "", fmt.Errorf("convert to wav: %w", err)
+	}
+
+	// OGG no longer needed
+	os.Remove(oggPath)
+
+	log.Printf("voice message converted to %s", wavPath)
 	b.reply(msg, "Голосовое сообщение получено.")
 
-	return tmp.Name(), nil
+	return wavPath, nil
 }
