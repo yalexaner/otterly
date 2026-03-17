@@ -11,10 +11,10 @@ Build order is intentional: core value first (voice transcription), then auth, t
 - [x] `/start` and `/help` commands with static Russian responses
 - [x] Download voice message OGG file from Telegram
 - [x] Convert OGG → WAV PCM 16 kHz mono via ffmpeg
-- [ ] ElevenLabs transcription client (multipart upload, Russian)
-- [ ] End-to-end: voice message → transcript reply
+- [x] ElevenLabs transcription client (multipart upload, Russian)
+- [x] End-to-end: voice message → transcript reply
 - [x] Reject voice messages >90 seconds
-- [ ] Retry ElevenLabs once on 5xx/timeout
+- [x] Retry ElevenLabs once on 5xx/timeout
 - [x] Temp file cleanup after each request
 
 ## Phase 2 — Database & Auth
