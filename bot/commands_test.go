@@ -521,6 +521,44 @@ func TestHandleAllow_InvalidFormat(t *testing.T) {
 	}
 }
 
+func TestHandleAllow_ZeroID(t *testing.T) {
+	server, captured := newCaptureServer(t)
+	defer server.Close()
+	s := openTestStore(t)
+	defer func() { _ = s.Close() }()
+
+	b := newTestBotWithStore(t, server, s)
+	msg := commandMessage(42, 12345, "/allow 0")
+	b.handleCommand(msg)
+
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 sent message, got %d", len(*captured))
+	}
+	want := "Неверный формат ID. Укажите числовой Telegram ID."
+	if (*captured)[0].Text != want {
+		t.Errorf("text = %q, want %q", (*captured)[0].Text, want)
+	}
+}
+
+func TestHandleAllow_NegativeID(t *testing.T) {
+	server, captured := newCaptureServer(t)
+	defer server.Close()
+	s := openTestStore(t)
+	defer func() { _ = s.Close() }()
+
+	b := newTestBotWithStore(t, server, s)
+	msg := commandMessage(42, 12345, "/allow -5")
+	b.handleCommand(msg)
+
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 sent message, got %d", len(*captured))
+	}
+	want := "Неверный формат ID. Укажите числовой Telegram ID."
+	if (*captured)[0].Text != want {
+		t.Errorf("text = %q, want %q", (*captured)[0].Text, want)
+	}
+}
+
 func TestHandleAllow_StoreError(t *testing.T) {
 	server, captured := newCaptureServer(t)
 	defer server.Close()
@@ -820,6 +858,108 @@ func TestHandleDeny_UserNotFound(t *testing.T) {
 		t.Fatalf("expected 1 sent message, got %d", len(*captured))
 	}
 	want := "Пользователь не найден."
+	if (*captured)[0].Text != want {
+		t.Errorf("text = %q, want %q", (*captured)[0].Text, want)
+	}
+}
+
+func TestHandleDeny_NoArg(t *testing.T) {
+	server, captured := newCaptureServer(t)
+	defer server.Close()
+	s := openTestStore(t)
+	defer func() { _ = s.Close() }()
+
+	b := newTestBotWithStore(t, server, s)
+	msg := commandMessage(42, 12345, "/deny")
+	b.handleCommand(msg)
+
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 sent message, got %d", len(*captured))
+	}
+	want := "Использование: /deny <telegram_user_id>"
+	if (*captured)[0].Text != want {
+		t.Errorf("text = %q, want %q", (*captured)[0].Text, want)
+	}
+}
+
+func TestHandleDeny_InvalidFormat(t *testing.T) {
+	server, captured := newCaptureServer(t)
+	defer server.Close()
+	s := openTestStore(t)
+	defer func() { _ = s.Close() }()
+
+	b := newTestBotWithStore(t, server, s)
+	msg := commandMessage(42, 12345, "/deny abc")
+	b.handleCommand(msg)
+
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 sent message, got %d", len(*captured))
+	}
+	want := "Неверный формат ID. Укажите числовой Telegram ID."
+	if (*captured)[0].Text != want {
+		t.Errorf("text = %q, want %q", (*captured)[0].Text, want)
+	}
+}
+
+func TestHandleDeny_ZeroID(t *testing.T) {
+	server, captured := newCaptureServer(t)
+	defer server.Close()
+	s := openTestStore(t)
+	defer func() { _ = s.Close() }()
+
+	b := newTestBotWithStore(t, server, s)
+	msg := commandMessage(42, 12345, "/deny 0")
+	b.handleCommand(msg)
+
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 sent message, got %d", len(*captured))
+	}
+	want := "Неверный формат ID. Укажите числовой Telegram ID."
+	if (*captured)[0].Text != want {
+		t.Errorf("text = %q, want %q", (*captured)[0].Text, want)
+	}
+}
+
+func TestHandleDeny_NegativeID(t *testing.T) {
+	server, captured := newCaptureServer(t)
+	defer server.Close()
+	s := openTestStore(t)
+	defer func() { _ = s.Close() }()
+
+	b := newTestBotWithStore(t, server, s)
+	msg := commandMessage(42, 12345, "/deny -5")
+	b.handleCommand(msg)
+
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 sent message, got %d", len(*captured))
+	}
+	want := "Неверный формат ID. Укажите числовой Telegram ID."
+	if (*captured)[0].Text != want {
+		t.Errorf("text = %q, want %q", (*captured)[0].Text, want)
+	}
+}
+
+func TestHandleDeny_StoreError(t *testing.T) {
+	server, captured := newCaptureServer(t)
+	defer server.Close()
+	s := openTestStore(t)
+
+	// allow user first so BlockUser doesn't return ErrNotFound
+	if err := s.AllowUser(99999, 12345); err != nil {
+		t.Fatalf("AllowUser: %v", err)
+	}
+
+	// close the store to force an error
+	_ = s.Close()
+
+	b := newTestBotWithStore(t, server, s)
+	msg := commandMessage(42, 12345, "/deny 99999")
+	b.handleCommand(msg)
+
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 sent message, got %d", len(*captured))
+	}
+	want := "Ошибка при блокировке пользователя."
 	if (*captured)[0].Text != want {
 		t.Errorf("text = %q, want %q", (*captured)[0].Text, want)
 	}

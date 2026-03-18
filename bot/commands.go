@@ -140,7 +140,7 @@ func (b *Bot) handleAllow(msg *tgbotapi.Message) {
 	}
 
 	userID, err := strconv.ParseInt(arg, 10, 64)
-	if err != nil {
+	if err != nil || userID <= 0 {
 		b.reply(msg, "Неверный формат ID. Укажите числовой Telegram ID.")
 		return
 	}
@@ -170,12 +170,12 @@ func (b *Bot) handleDeny(msg *tgbotapi.Message) {
 	}
 
 	userID, err := strconv.ParseInt(arg, 10, 64)
-	if err != nil {
+	if err != nil || userID <= 0 {
 		b.reply(msg, "Неверный формат ID. Укажите числовой Telegram ID.")
 		return
 	}
 
-	if userID == msg.From.ID {
+	if userID == b.cfg.TelegramAdminID {
 		b.reply(msg, "Нельзя заблокировать администратора.")
 		return
 	}

@@ -471,6 +471,16 @@ func TestRedeemInvite_Success(t *testing.T) {
 		t.Error("user should be active after redeem")
 	}
 
+	// verify username was stored
+	var username string
+	err = s.db.QueryRow("SELECT username FROM users WHERE telegram_user_id = 100").Scan(&username)
+	if err != nil {
+		t.Fatalf("query username: %v", err)
+	}
+	if username != "alice" {
+		t.Errorf("username = %q, want %q", username, "alice")
+	}
+
 	// invite should be marked as used
 	var usedBy int64
 	err = s.db.QueryRow("SELECT used_by FROM invites WHERE token = ?", "redeem-ok").Scan(&usedBy)
