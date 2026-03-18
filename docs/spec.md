@@ -46,9 +46,14 @@ Telegram bot that transcribes voice messages to Russian text using ElevenLabs AP
 - `/invite` — generate a one-time invite token
 
 ### Error Handling
-- ElevenLabs failure: retry once, then send Russian error to user
-- Unhandled errors: DM admin with stack trace
-- User-facing messages always in Russian
+- Per-update panic recovery: one panic doesn't crash the bot
+- ElevenLabs failure: retry once on 5xx or timeout, then send Russian error to user
+- Unhandled errors/panics: DM admin with stack trace
+- ElevenLabs permanent failure: DM admin (separate category from panics)
+- Rate-limited admin notifications (max 1 per error category per 5 minutes)
+- Graceful shutdown on SIGTERM/SIGINT with 30-second drain timeout
+- Context propagation: cancellation flows to ElevenLabs API and ffmpeg
+- User-facing messages always in Russian, never leak internals
 
 ## Database (SQLite)
 
@@ -82,6 +87,7 @@ No transcripts are stored. Privacy by design.
 | Transcription error | Не удалось расшифровать сообщение. Попробуйте позже. |
 | Invite success | Добро пожаловать! Теперь вы можете отправлять голосовые сообщения. |
 | Invite invalid | Недействительная или просроченная ссылка. |
+| Internal error (panic) | Произошла внутренняя ошибка. Попробуйте позже. |
 
 ## Deployment
 

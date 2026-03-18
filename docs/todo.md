@@ -32,11 +32,11 @@ Build order is intentional: core value first (voice transcription), then auth, t
 
 ## Phase 3 — Error Handling & Resilience
 
-- [ ] Global error recovery (don't crash on panics)
-- [ ] DM admin on unhandled errors with stack trace
-- [ ] DM admin on ElevenLabs permanent failure
-- [ ] User-friendly Russian error responses
-- [ ] Graceful shutdown: finish in-flight requests on SIGTERM
+- [x] Global error recovery (don't crash on panics)
+- [x] DM admin on unhandled errors with stack trace
+- [x] DM admin on ElevenLabs permanent failure
+- [x] User-friendly Russian error responses
+- [x] Graceful shutdown: finish in-flight requests on SIGTERM
 
 ## Phase 4 — Deployment
 
