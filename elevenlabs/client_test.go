@@ -1,15 +1,25 @@
 package elevenlabs
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 )
+
+// fakeTimeoutErr implements the Timeout() bool interface for testing.
+type fakeTimeoutErr struct{}
+
+func (e *fakeTimeoutErr) Error() string   { return "timeout" }
+func (e *fakeTimeoutErr) Timeout() bool   { return true }
+func (e *fakeTimeoutErr) Temporary() bool { return true }
 
 // newTestWAV creates a temporary WAV file and returns its path.
 // the caller must remove the file when done.
@@ -86,7 +96,7 @@ func TestTranscribe_Success(t *testing.T) {
 	c := NewClient("test-key")
 	c.baseURL = server.URL
 
-	text, err := c.Transcribe(wavPath)
+	text, err := c.Transcribe(context.Background(), wavPath)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -108,7 +118,7 @@ func TestTranscribe_APIError400(t *testing.T) {
 	c := NewClient("test-key")
 	c.baseURL = server.URL
 
-	text, err := c.Transcribe(wavPath)
+	text, err := c.Transcribe(context.Background(), wavPath)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -134,7 +144,7 @@ func TestTranscribe_EmptyText(t *testing.T) {
 	c := NewClient("test-key")
 	c.baseURL = server.URL
 
-	text, err := c.Transcribe(wavPath)
+	text, err := c.Transcribe(context.Background(), wavPath)
 	if err == nil {
 		t.Fatal("expected error for empty text, got nil")
 	}
@@ -160,7 +170,7 @@ func TestTranscribe_WhitespaceOnlyText(t *testing.T) {
 	c := NewClient("test-key")
 	c.baseURL = server.URL
 
-	text, err := c.Transcribe(wavPath)
+	text, err := c.Transcribe(context.Background(), wavPath)
 	if err == nil {
 		t.Fatal("expected error for whitespace-only text, got nil")
 	}
@@ -193,7 +203,7 @@ func TestTranscribe_Retry500ThenSuccess(t *testing.T) {
 	c := NewClient("test-key")
 	c.baseURL = server.URL
 
-	text, err := c.Transcribe(wavPath)
+	text, err := c.Transcribe(context.Background(), wavPath)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -220,7 +230,7 @@ func TestTranscribe_Retry500BothFail(t *testing.T) {
 	c := NewClient("test-key")
 	c.baseURL = server.URL
 
-	text, err := c.Transcribe(wavPath)
+	text, err := c.Transcribe(context.Background(), wavPath)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -257,7 +267,7 @@ func TestTranscribe_RetryTimeoutThenSuccess(t *testing.T) {
 	c.baseURL = server.URL
 	c.httpClient.Timeout = 100 * time.Millisecond
 
-	text, err := c.Transcribe(wavPath)
+	text, err := c.Transcribe(context.Background(), wavPath)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -266,5 +276,106 @@ func TestTranscribe_RetryTimeoutThenSuccess(t *testing.T) {
 	}
 	if calls.Load() != 2 {
 		t.Errorf("calls = %d, want 2", calls.Load())
+	}
+}
+
+func TestIsTransient_ServerError(t *testing.T) {
+	err := NewServerError(500, "internal server error")
+	if !IsTransient(err) {
+		t.Error("expected IsTransient to return true for server error")
+	}
+}
+
+func TestIsTransient_NonServerError(t *testing.T) {
+	err := fmt.Errorf("API error 400: bad request")
+	if IsTransient(err) {
+		t.Error("expected IsTransient to return false for non-server error")
+	}
+}
+
+func TestIsTransient_WrappedServerError(t *testing.T) {
+	err := fmt.Errorf("transcribe: %w", NewServerError(503, "service unavailable"))
+	if !IsTransient(err) {
+		t.Error("expected IsTransient to return true for wrapped server error")
+	}
+}
+
+func TestIsTransient_TimeoutError(t *testing.T) {
+	err := fmt.Errorf("send request: %w", &fakeTimeoutErr{})
+	if !IsTransient(err) {
+		t.Error("expected IsTransient to return true for timeout error")
+	}
+}
+
+func TestIsTransient_NonTimeoutNonServerError(t *testing.T) {
+	err := fmt.Errorf("some random error")
+	if IsTransient(err) {
+		t.Error("expected IsTransient to return false for non-timeout non-server error")
+	}
+}
+
+func TestTranscribe_FileNotFound(t *testing.T) {
+	c := NewClient("test-key")
+
+	text, err := c.Transcribe(context.Background(), "/nonexistent/file.wav")
+	if err == nil {
+		t.Fatal("expected error for nonexistent file, got nil")
+	}
+	if text != "" {
+		t.Errorf("text = %q, want empty", text)
+	}
+	if !strings.Contains(err.Error(), "build request") {
+		t.Errorf("error = %q, want it to contain 'build request'", err)
+	}
+}
+
+func TestTranscribe_InvalidJSONResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("not valid json"))
+	}))
+	defer server.Close()
+
+	wavPath := newTestWAV(t)
+	defer func() { _ = os.Remove(wavPath) }()
+
+	c := NewClient("test-key")
+	c.baseURL = server.URL
+
+	text, err := c.Transcribe(context.Background(), wavPath)
+	if err == nil {
+		t.Fatal("expected error for invalid JSON, got nil")
+	}
+	if text != "" {
+		t.Errorf("text = %q, want empty", text)
+	}
+	if !strings.Contains(err.Error(), "decode response") {
+		t.Errorf("error = %q, want it to contain 'decode response'", err)
+	}
+}
+
+func TestTranscribe_CancelledContext(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(2 * time.Second)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"text": "should not reach"})
+	}))
+	defer server.Close()
+
+	wavPath := newTestWAV(t)
+	defer func() { _ = os.Remove(wavPath) }()
+
+	c := NewClient("test-key")
+	c.baseURL = server.URL
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	text, err := c.Transcribe(ctx, wavPath)
+	if err == nil {
+		t.Fatal("expected error for cancelled context, got nil")
+	}
+	if text != "" {
+		t.Errorf("text = %q, want empty", text)
 	}
 }

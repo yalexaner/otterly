@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"testing"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/yalexaner/otterly/elevenlabs"
 )
 
 // voiceServerOpts configures the behavior of the fake voice test server.
@@ -104,20 +106,20 @@ func voiceMessage(chatID int64, fileID string, duration int) *tgbotapi.Message {
 
 // fakeTranscriber implements the transcriber interface for tests.
 type fakeTranscriber struct {
-	text        string
-	err         error
+	text         string
+	err          error
 	capturedPath string
 }
 
-func (f *fakeTranscriber) Transcribe(wavPath string) (string, error) {
+func (f *fakeTranscriber) Transcribe(_ context.Context, wavPath string) (string, error) {
 	f.capturedPath = wavPath
 	return f.text, f.err
 }
 
 // mockConverter returns a converter that creates a WAV temp file with the given content.
-func mockConverter(t *testing.T) func(string) (string, error) {
+func mockConverter(t *testing.T) func(context.Context, string) (string, error) {
 	t.Helper()
-	return func(inputPath string) (string, error) {
+	return func(_ context.Context, inputPath string) (string, error) {
 		tmp, err := os.CreateTemp("", "test-*.wav")
 		if err != nil {
 			t.Fatal(err)
@@ -136,7 +138,7 @@ func TestHandleVoice_Success(t *testing.T) {
 	b := newTestBotWithCapture(t, server)
 
 	var convertedInput string
-	b.convertToWAV = func(inputPath string) (string, error) {
+	b.convertToWAV = func(_ context.Context, inputPath string) (string, error) {
 		convertedInput = inputPath
 		tmp, err := os.CreateTemp("", "test-*.wav")
 		if err != nil {
@@ -150,7 +152,7 @@ func TestHandleVoice_Success(t *testing.T) {
 
 	msg := voiceMessage(42, "test-file-id", 5)
 
-	text, err := b.handleVoice(msg)
+	text, err := b.handleVoice(context.Background(), msg)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -195,7 +197,7 @@ func TestHandleVoice_GetFileError(t *testing.T) {
 	b := newTestBotWithCapture(t, server)
 	msg := voiceMessage(42, "test-file-id", 5)
 
-	path, err := b.handleVoice(msg)
+	path, err := b.handleVoice(context.Background(), msg)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -219,7 +221,7 @@ func TestHandleVoice_DownloadError(t *testing.T) {
 	b := newTestBotWithCapture(t, server)
 	msg := voiceMessage(42, "test-file-id", 5)
 
-	path, err := b.handleVoice(msg)
+	path, err := b.handleVoice(context.Background(), msg)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -243,7 +245,7 @@ func TestHandleVoice_TooLong(t *testing.T) {
 	b := newTestBotWithCapture(t, server)
 	msg := voiceMessage(42, "test-file-id", 91)
 
-	path, err := b.handleVoice(msg)
+	path, err := b.handleVoice(context.Background(), msg)
 	if err == nil {
 		t.Fatal("expected error for voice >90s, got nil")
 	}
@@ -278,13 +280,13 @@ func TestHandleVoice_ConversionFails(t *testing.T) {
 	b := newTestBotWithCapture(t, server)
 
 	var convertedInput string
-	b.convertToWAV = func(inputPath string) (string, error) {
+	b.convertToWAV = func(_ context.Context, inputPath string) (string, error) {
 		convertedInput = inputPath
 		return "", fmt.Errorf("ffmpeg not found")
 	}
 
 	msg := voiceMessage(42, "test-file-id", 5)
-	path, err := b.handleVoice(msg)
+	path, err := b.handleVoice(context.Background(), msg)
 	if err == nil {
 		t.Fatal("expected error when conversion fails, got nil")
 	}
@@ -324,7 +326,7 @@ func TestHandleVoice_TranscriptionSuccess(t *testing.T) {
 	b := newTestBotWithCapture(t, server)
 
 	var wavPath string
-	b.convertToWAV = func(inputPath string) (string, error) {
+	b.convertToWAV = func(_ context.Context, inputPath string) (string, error) {
 		tmp, err := os.CreateTemp("", "test-*.wav")
 		if err != nil {
 			t.Fatal(err)
@@ -339,7 +341,7 @@ func TestHandleVoice_TranscriptionSuccess(t *testing.T) {
 
 	msg := voiceMessage(42, "test-file-id", 10)
 
-	text, err := b.handleVoice(msg)
+	text, err := b.handleVoice(context.Background(), msg)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -377,7 +379,7 @@ func TestHandleVoice_TranscriptionFails(t *testing.T) {
 	b := newTestBotWithCapture(t, server)
 
 	var wavPath string
-	b.convertToWAV = func(inputPath string) (string, error) {
+	b.convertToWAV = func(_ context.Context, inputPath string) (string, error) {
 		tmp, err := os.CreateTemp("", "test-*.wav")
 		if err != nil {
 			t.Fatal(err)
@@ -391,7 +393,7 @@ func TestHandleVoice_TranscriptionFails(t *testing.T) {
 
 	msg := voiceMessage(42, "test-file-id", 10)
 
-	text, err := b.handleVoice(msg)
+	text, err := b.handleVoice(context.Background(), msg)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -407,16 +409,113 @@ func TestHandleVoice_TranscriptionFails(t *testing.T) {
 		t.Errorf("WAV temp file %q was not cleaned up after transcription failure", wavPath)
 	}
 
-	// verify error reply was sent
-	if len(*captured) != 1 {
-		t.Fatalf("expected 1 reply, got %d", len(*captured))
-	}
+	// verify error reply was sent to user (admin notification also captured)
 	want := "Не удалось расшифровать сообщение. Попробуйте позже."
-	if (*captured)[0].Text != want {
-		t.Errorf("reply = %q, want %q", (*captured)[0].Text, want)
+	userReplyFound := false
+	for _, m := range *captured {
+		if m.ChatID == 42 && m.Text == want {
+			userReplyFound = true
+		}
 	}
-	if (*captured)[0].ChatID != 42 {
-		t.Errorf("reply chat ID = %d, want 42", (*captured)[0].ChatID)
+	if !userReplyFound {
+		t.Errorf("expected user error reply %q, got: %+v", want, *captured)
+	}
+}
+
+func TestHandleVoice_PermanentFailure_AdminNotified(t *testing.T) {
+	fakeOGG := []byte("fake-ogg-data")
+	server, captured := newVoiceServer(t, voiceServerOpts{fileContent: fakeOGG})
+	defer server.Close()
+
+	b := newTestBotWithCapture(t, server)
+	b.convertToWAV = mockConverter(t)
+	b.transcriber = &fakeTranscriber{err: fmt.Errorf("API error 400: bad request")}
+
+	msg := voiceMessage(42, "test-file-id", 5)
+	_, _ = b.handleVoice(context.Background(), msg)
+
+	// expect 2 messages: admin notification + user error reply
+	if len(*captured) != 2 {
+		t.Fatalf("expected 2 messages, got %d: %+v", len(*captured), *captured)
+	}
+
+	adminNotified := false
+	for _, m := range *captured {
+		if m.ChatID == 12345 && strings.Contains(m.Text, "[elevenlabs_permanent]") {
+			adminNotified = true
+		}
+	}
+	if !adminNotified {
+		t.Errorf("expected admin notification with elevenlabs_permanent category, got: %+v", *captured)
+	}
+}
+
+func TestHandleVoice_TransientFailure_AdminNotified(t *testing.T) {
+	fakeOGG := []byte("fake-ogg-data")
+	server, captured := newVoiceServer(t, voiceServerOpts{fileContent: fakeOGG})
+	defer server.Close()
+
+	b := newTestBotWithCapture(t, server)
+	b.convertToWAV = mockConverter(t)
+	b.transcriber = &fakeTranscriber{err: elevenlabs.NewServerError(500, "internal server error")}
+
+	msg := voiceMessage(42, "test-file-id", 5)
+	_, _ = b.handleVoice(context.Background(), msg)
+
+	// expect 2 messages: admin notification + user error reply
+	if len(*captured) != 2 {
+		t.Fatalf("expected 2 messages, got %d: %+v", len(*captured), *captured)
+	}
+
+	adminNotified := false
+	for _, m := range *captured {
+		if m.ChatID == 12345 && strings.Contains(m.Text, "[elevenlabs_transient]") {
+			adminNotified = true
+		}
+	}
+	if !adminNotified {
+		t.Errorf("expected admin notification with elevenlabs_transient category, got: %+v", *captured)
+	}
+}
+
+func TestHandleVoice_RepeatedFailure_RateLimited(t *testing.T) {
+	fakeOGG := []byte("fake-ogg-data")
+	server, captured := newVoiceServer(t, voiceServerOpts{fileContent: fakeOGG})
+	defer server.Close()
+
+	b := newTestBotWithCapture(t, server)
+	b.convertToWAV = mockConverter(t)
+	b.transcriber = &fakeTranscriber{err: fmt.Errorf("API error 400: bad request")}
+
+	msg := voiceMessage(42, "test-file-id", 5)
+
+	// call handleVoice three times
+	_, _ = b.handleVoice(context.Background(), msg)
+	_, _ = b.handleVoice(context.Background(), msg)
+	_, _ = b.handleVoice(context.Background(), msg)
+
+	// count admin notifications (chat ID 12345)
+	adminCount := 0
+	for _, m := range *captured {
+		if m.ChatID == 12345 {
+			adminCount++
+		}
+	}
+
+	// rate limiter should suppress duplicate notifications — only 1 admin message
+	if adminCount != 1 {
+		t.Errorf("expected 1 admin notification (rate limited), got %d", adminCount)
+	}
+
+	// user should still get 3 error replies
+	userCount := 0
+	for _, m := range *captured {
+		if m.ChatID == 42 {
+			userCount++
+		}
+	}
+	if userCount != 3 {
+		t.Errorf("expected 3 user error replies, got %d", userCount)
 	}
 }
 
@@ -430,7 +529,7 @@ func TestHandleVoice_ExactLimit(t *testing.T) {
 	b.transcriber = &fakeTranscriber{text: "тест"}
 	msg := voiceMessage(42, "test-file-id", 90)
 
-	text, err := b.handleVoice(msg)
+	text, err := b.handleVoice(context.Background(), msg)
 	if err != nil {
 		t.Fatalf("expected no error for 90s voice, got: %v", err)
 	}

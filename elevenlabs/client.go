@@ -2,6 +2,7 @@ package elevenlabs
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -40,23 +41,23 @@ type transcribeResponse struct {
 // Transcribe sends a WAV file to the ElevenLabs Scribe v2 API and returns
 // the transcribed text. retries once on 5xx or timeout errors. returns an
 // error if the API call fails or the response contains empty text.
-func (c *Client) Transcribe(wavPath string) (string, error) {
+func (c *Client) Transcribe(ctx context.Context, wavPath string) (string, error) {
 	body, contentType, err := buildMultipartRequest(wavPath)
 	if err != nil {
 		return "", fmt.Errorf("build request: %w", err)
 	}
 	bodyBytes := body.Bytes()
 
-	text, err := c.doTranscribe(bodyBytes, contentType)
+	text, err := c.doTranscribe(ctx, bodyBytes, contentType)
 	if err != nil && isRetryable(err) {
-		text, err = c.doTranscribe(bodyBytes, contentType)
+		text, err = c.doTranscribe(ctx, bodyBytes, contentType)
 	}
 	return text, err
 }
 
 // doTranscribe performs a single transcription request.
-func (c *Client) doTranscribe(bodyBytes []byte, contentType string) (string, error) {
-	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/v1/speech-to-text", bytes.NewReader(bodyBytes))
+func (c *Client) doTranscribe(ctx context.Context, bodyBytes []byte, contentType string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/v1/speech-to-text", bytes.NewReader(bodyBytes))
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)
 	}
@@ -70,12 +71,12 @@ func (c *Client) doTranscribe(bodyBytes []byte, contentType string) (string, err
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 500 {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return "", &serverError{code: resp.StatusCode, body: string(respBody)}
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return "", fmt.Errorf("API error %d: %s", resp.StatusCode, string(respBody))
 	}
 
@@ -101,8 +102,8 @@ func (e *serverError) Error() string {
 	return fmt.Sprintf("API error %d: %s", e.code, e.body)
 }
 
-// isRetryable returns true if the error is a 5xx server error or a timeout.
-func isRetryable(err error) bool {
+// IsTransient returns true if the error is a 5xx server error or a timeout.
+func IsTransient(err error) bool {
 	var se *serverError
 	if errors.As(err, &se) {
 		return true
@@ -112,6 +113,17 @@ func isRetryable(err error) bool {
 		return t.Timeout()
 	}
 	return false
+}
+
+// NewServerError creates a server error for the given status code.
+// errors created with this function are recognized by IsTransient.
+func NewServerError(code int, body string) error {
+	return &serverError{code: code, body: body}
+}
+
+// isRetryable returns true if the error is a 5xx server error or a timeout.
+func isRetryable(err error) bool {
+	return IsTransient(err)
 }
 
 // buildMultipartRequest creates the multipart form body for the transcription request.
@@ -136,10 +148,10 @@ func buildMultipartRequest(wavPath string) (*bytes.Buffer, string, error) {
 
 	// add form fields
 	fields := map[string]string{
-		"model_id":          "scribe_v2",
-		"language_code":     "ru",
-		"file_format":       "pcm_s16le_16",
-		"tag_audio_events":  "false",
+		"model_id":         "scribe_v2",
+		"language_code":    "ru",
+		"file_format":      "pcm_s16le_16",
+		"tag_audio_events": "false",
 	}
 	for key, val := range fields {
 		if err := w.WriteField(key, val); err != nil {

@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestHelperProcess is invoked by tests as a fake ffmpeg process.
@@ -35,6 +36,10 @@ func TestHelperProcess(t *testing.T) {
 	case "fail":
 		fmt.Fprintf(os.Stderr, "ffmpeg: error while processing")
 		os.Exit(1)
+	case "slow":
+		// sleep long enough that a cancelled context kills this process
+		time.Sleep(30 * time.Second)
+		os.Exit(0)
 	}
 }
 
@@ -64,7 +69,7 @@ func TestConvertToWAV_Success(t *testing.T) {
 	execCommandContext = fakeExecCommand("success")
 	defer func() { execCommandContext = origExecCommand }()
 
-	outputPath, err := ConvertToWAV(input.Name())
+	outputPath, err := ConvertToWAV(context.Background(), input.Name())
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -84,7 +89,7 @@ func TestConvertToWAV_Success(t *testing.T) {
 }
 
 func TestConvertToWAV_InputNotFound(t *testing.T) {
-	outputPath, err := ConvertToWAV("/nonexistent/file.ogg")
+	outputPath, err := ConvertToWAV(context.Background(), "/nonexistent/file.ogg")
 	if err == nil {
 		t.Fatal("expected error for missing input, got nil")
 	}
@@ -110,9 +115,39 @@ func TestConvertToWAV_FfmpegFails(t *testing.T) {
 	execCommandContext = fakeExecCommand("fail")
 	defer func() { execCommandContext = origExecCommand }()
 
-	outputPath, err := ConvertToWAV(input.Name())
+	outputPath, err := ConvertToWAV(context.Background(), input.Name())
 	if err == nil {
 		t.Fatal("expected error when ffmpeg fails, got nil")
+	}
+	if outputPath != "" {
+		_ = os.Remove(outputPath)
+		t.Errorf("expected empty output path, got %q", outputPath)
+	}
+	if !strings.Contains(err.Error(), "ffmpeg") {
+		t.Errorf("error = %q, want it to contain 'ffmpeg'", err)
+	}
+}
+
+func TestConvertToWAV_CancelledContext(t *testing.T) {
+	input, err := os.CreateTemp("", "test-input-*.ogg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = input.Write([]byte("fake-ogg-data"))
+	_ = input.Close()
+	defer func() { _ = os.Remove(input.Name()) }()
+
+	// use a slow helper that sleeps for 5 seconds so the context cancellation kills it
+	origExecCommand := execCommandContext
+	execCommandContext = fakeExecCommand("slow")
+	defer func() { execCommandContext = origExecCommand }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	outputPath, err := ConvertToWAV(ctx, input.Name())
+	if err == nil {
+		t.Fatal("expected error for cancelled context, got nil")
 	}
 	if outputPath != "" {
 		_ = os.Remove(outputPath)

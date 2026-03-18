@@ -1,7 +1,10 @@
 package main
 
 import (
+	"context"
 	"log"
+	"os/signal"
+	"syscall"
 
 	"github.com/yalexaner/otterly/bot"
 	"github.com/yalexaner/otterly/config"
@@ -33,5 +36,8 @@ func main() {
 		log.Fatalf("failed to create bot: %v", err)
 	}
 
-	b.Start()
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
+
+	b.Start(ctx)
 }

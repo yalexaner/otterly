@@ -15,7 +15,9 @@ var execCommandContext = exec.CommandContext
 // ConvertToWAV converts an OGG/Opus audio file to WAV PCM 16 kHz mono using
 // ffmpeg. Returns the path to the output WAV temp file. The caller is
 // responsible for removing the output file. The input file is not removed.
-func ConvertToWAV(inputPath string) (string, error) {
+// The provided context controls cancellation; a 60-second timeout is applied
+// on top of it to bound ffmpeg execution time.
+func ConvertToWAV(ctx context.Context, inputPath string) (string, error) {
 	if _, err := os.Stat(inputPath); err != nil {
 		return "", fmt.Errorf("input file: %w", err)
 	}
@@ -30,7 +32,7 @@ func ConvertToWAV(inputPath string) (string, error) {
 		return "", fmt.Errorf("close temp file: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
 	cmd := execCommandContext(ctx, "ffmpeg", "-i", inputPath, "-ar", "16000", "-ac", "1", "-f", "wav", "-y", outputPath)

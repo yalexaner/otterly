@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/yalexaner/otterly/elevenlabs"
 )
 
 // maxVoiceFileSize is the maximum allowed size for a voice file download (20 MB,
@@ -17,7 +19,7 @@ const maxVoiceFileSize = 20 * 1024 * 1024
 
 // transcriber converts audio to text.
 type transcriber interface {
-	Transcribe(wavPath string) (string, error)
+	Transcribe(ctx context.Context, wavPath string) (string, error)
 }
 
 // httpClient is used for downloading files from Telegram with a timeout.
@@ -26,7 +28,7 @@ var httpClient = &http.Client{Timeout: 30 * time.Second}
 // handleVoice processes a voice message: downloads OGG from Telegram, converts
 // to WAV, transcribes via ElevenLabs, and replies with the transcript. all temp
 // files are cleaned up internally.
-func (b *Bot) handleVoice(msg *tgbotapi.Message) (string, error) {
+func (b *Bot) handleVoice(ctx context.Context, msg *tgbotapi.Message) (string, error) {
 	// reject voice messages longer than 90 seconds
 	if msg.Voice.Duration > 90 {
 		b.reply(msg, "Сообщение слишком длинное (более 90 секунд).")
@@ -52,7 +54,13 @@ func (b *Bot) handleVoice(msg *tgbotapi.Message) (string, error) {
 	url := fmt.Sprintf(b.fileEndpoint, b.api.Token, file.FilePath)
 
 	// download the file
-	resp, err := httpClient.Get(url)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		log.Printf("failed to create download request: %v", err)
+		b.reply(msg, "Не удалось загрузить голосовое сообщение.")
+		return "", fmt.Errorf("create download request: %w", err)
+	}
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		log.Printf("failed to download voice file: %v", err)
 		b.reply(msg, "Не удалось загрузить голосовое сообщение.")
@@ -100,7 +108,7 @@ func (b *Bot) handleVoice(msg *tgbotapi.Message) (string, error) {
 	log.Printf("voice message downloaded to %s", oggPath)
 
 	// convert OGG to WAV
-	wavPath, err := b.convertToWAV(oggPath)
+	wavPath, err := b.convertToWAV(ctx, oggPath)
 	if err != nil {
 		_ = os.Remove(oggPath)
 		log.Printf("failed to convert voice file: %v", err)
@@ -114,10 +122,15 @@ func (b *Bot) handleVoice(msg *tgbotapi.Message) (string, error) {
 	log.Printf("voice message converted to %s", wavPath)
 
 	// transcribe WAV to text
-	text, err := b.transcriber.Transcribe(wavPath)
+	text, err := b.transcriber.Transcribe(ctx, wavPath)
 	_ = os.Remove(wavPath)
 	if err != nil {
 		log.Printf("failed to transcribe voice: %v", err)
+		category := "elevenlabs_permanent"
+		if elevenlabs.IsTransient(err) {
+			category = "elevenlabs_transient"
+		}
+		b.notifier.Notify(category, err.Error())
 		b.reply(msg, "Не удалось расшифровать сообщение. Попробуйте позже.")
 		return "", fmt.Errorf("transcribe: %w", err)
 	}

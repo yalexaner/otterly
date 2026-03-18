@@ -1,8 +1,13 @@
 package bot
 
 import (
+	"context"
+	"fmt"
 	"log"
+	"runtime/debug"
 	"strings"
+	"sync"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/yalexaner/otterly/audio"
@@ -17,8 +22,11 @@ type Bot struct {
 	cfg          config.Config
 	store        *store.Store
 	fileEndpoint string
-	convertToWAV func(string) (string, error)
+	convertToWAV func(context.Context, string) (string, error)
 	transcriber  transcriber
+	notifier     *adminNotifier
+	wg           sync.WaitGroup
+	drainTimeout time.Duration
 }
 
 // New creates a new Bot instance using the provided config.
@@ -39,14 +47,21 @@ func newWithEndpoint(cfg config.Config, s *store.Store, apiEndpoint string) (*Bo
 	// derive file endpoint from api endpoint (e.g., /bot%s/%s -> /file/bot%s/%s)
 	fileEndpoint := strings.Replace(apiEndpoint, "/bot%s/%s", "/file/bot%s/%s", 1)
 
-	return &Bot{
+	b := &Bot{
 		api:          api,
 		cfg:          cfg,
 		store:        s,
 		fileEndpoint: fileEndpoint,
 		convertToWAV: audio.ConvertToWAV,
 		transcriber:  elevenlabs.NewClient(cfg.ElevenLabsAPIKey),
-	}, nil
+		drainTimeout: 30 * time.Second,
+	}
+
+	if cfg.TelegramAdminID > 0 {
+		b.notifier = newAdminNotifier(api, cfg.TelegramAdminID)
+	}
+
+	return b, nil
 }
 
 // isAdmin returns true if the given user ID matches the configured admin.
@@ -103,8 +118,26 @@ func (b *Bot) registerCommands() {
 	}
 }
 
+// recoverFromPanic returns a deferred function that catches panics, logs the
+// stack trace, notifies the admin, and replies to the user with a generic error.
+func (b *Bot) recoverFromPanic(msg *tgbotapi.Message) func() {
+	return func() {
+		r := recover()
+		if r == nil {
+			return
+		}
+		stack := debug.Stack()
+		log.Printf("panic handling update: %v\n%s", r, stack)
+		b.notifier.Notify("panic", fmt.Sprintf("%v\n%s", r, stack))
+		if msg != nil {
+			b.reply(msg, "Произошла внутренняя ошибка. Попробуйте позже.")
+		}
+	}
+}
+
 // Start begins the long-polling loop, receiving and dispatching updates.
-func (b *Bot) Start() {
+// It returns when the provided context is cancelled.
+func (b *Bot) Start(ctx context.Context) {
 	b.registerCommands()
 
 	u := tgbotapi.NewUpdate(0)
@@ -114,33 +147,69 @@ func (b *Bot) Start() {
 
 	log.Println("bot started, listening for updates...")
 
-	for update := range updates {
-		if update.Message == nil || update.Message.From == nil {
-			continue
-		}
+	for {
+		select {
+		case <-ctx.Done():
+			b.api.StopReceivingUpdates()
+			log.Println("shutting down gracefully")
 
-		// /start handles auth internally (invite redemption flow)
-		if !update.Message.IsCommand() || update.Message.Command() != "start" {
-			if !b.isAuthorized(update.Message.From.ID) {
-				b.reply(update.Message, "У вас нет доступа.")
+			done := make(chan struct{})
+			go func() {
+				b.wg.Wait()
+				close(done)
+			}()
+			select {
+			case <-done:
+				log.Println("shutdown: all handlers finished")
+			case <-time.After(b.drainTimeout):
+				log.Println("shutdown: timed out waiting for handlers")
+			}
+			return
+		case update, ok := <-updates:
+			if !ok {
+				return
+			}
+
+			if update.Message == nil || update.Message.From == nil {
 				continue
 			}
-		}
 
-		if update.Message.IsCommand() {
-			log.Printf("[command] %s from user %d", update.Message.Command(), update.Message.From.ID)
-			b.handleCommand(update.Message)
-		} else if update.Message.Voice != nil {
-			if !update.Message.Chat.IsPrivate() {
-				log.Printf("[voice] ignored non-private chat %d", update.Message.Chat.ID)
-				continue
+			// /start handles auth internally (invite redemption flow)
+			if !update.Message.IsCommand() || update.Message.Command() != "start" {
+				if !b.isAuthorized(update.Message.From.ID) {
+					b.reply(update.Message, "У вас нет доступа.")
+					continue
+				}
 			}
-			log.Printf("[voice] from user %d, duration %ds", update.Message.From.ID, update.Message.Voice.Duration)
-			_, _ = b.handleVoice(update.Message)
-		} else if update.Message.Text != "" {
-			log.Printf("[text] from user %d", update.Message.From.ID)
-		} else {
-			log.Printf("[other] from user %d", update.Message.From.ID)
+
+			if update.Message.IsCommand() {
+				log.Printf("[command] %s from user %d", update.Message.Command(), update.Message.From.ID)
+				b.wg.Add(1)
+				go func() {
+					defer b.wg.Done()
+					defer b.recoverFromPanic(update.Message)()
+					b.handleCommand(update.Message)
+				}()
+			} else if update.Message.Voice != nil {
+				if !update.Message.Chat.IsPrivate() {
+					log.Printf("[voice] ignored non-private chat %d", update.Message.Chat.ID)
+					continue
+				}
+				log.Printf("[voice] from user %d, duration %ds", update.Message.From.ID, update.Message.Voice.Duration)
+				b.wg.Add(1)
+				go func() {
+					defer b.wg.Done()
+					defer b.recoverFromPanic(update.Message)()
+					// use context.WithoutCancel so in-flight voice requests
+					// can finish during graceful shutdown (drain timeout)
+					reqCtx := context.WithoutCancel(ctx)
+					_, _ = b.handleVoice(reqCtx, update.Message)
+				}()
+			} else if update.Message.Text != "" {
+				log.Printf("[text] from user %d", update.Message.From.ID)
+			} else {
+				log.Printf("[other] from user %d", update.Message.From.ID)
+			}
 		}
 	}
 }
