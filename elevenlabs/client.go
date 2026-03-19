@@ -49,7 +49,7 @@ func (c *Client) Transcribe(ctx context.Context, wavPath string) (string, error)
 	bodyBytes := body.Bytes()
 
 	text, err := c.doTranscribe(ctx, bodyBytes, contentType)
-	if err != nil && isRetryable(err) {
+	if err != nil && IsTransient(err) {
 		text, err = c.doTranscribe(ctx, bodyBytes, contentType)
 	}
 	return text, err
@@ -121,10 +121,6 @@ func NewServerError(code int, body string) error {
 	return &serverError{code: code, body: body}
 }
 
-// isRetryable returns true if the error is a 5xx server error or a timeout.
-func isRetryable(err error) bool {
-	return IsTransient(err)
-}
 
 // buildMultipartRequest creates the multipart form body for the transcription request.
 func buildMultipartRequest(wavPath string) (*bytes.Buffer, string, error) {

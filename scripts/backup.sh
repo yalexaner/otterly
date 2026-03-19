@@ -4,7 +4,7 @@
 
 set -eu
 
-DB_PATH="${1:-/data/otterly.db}"
+DB_PATH="${1:-$HOME/otterly/data/otterly.db}"
 BACKUP_DIR="${2:-$HOME/otterly/backups}"
 DATE="$(date +%Y-%m-%d)"
 BACKUP_FILE="$BACKUP_DIR/otterly-$DATE.db"

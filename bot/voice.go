@@ -118,12 +118,12 @@ func (b *Bot) handleVoice(ctx context.Context, msg *tgbotapi.Message) (string, e
 
 	// OGG no longer needed
 	_ = os.Remove(oggPath)
+	defer func() { _ = os.Remove(wavPath) }()
 
 	log.Printf("voice message converted to %s", wavPath)
 
 	// transcribe WAV to text
 	text, err := b.transcriber.Transcribe(ctx, wavPath)
-	_ = os.Remove(wavPath)
 	if err != nil {
 		log.Printf("failed to transcribe voice: %v", err)
 		category := "elevenlabs_permanent"

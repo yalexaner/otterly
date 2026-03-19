@@ -6,6 +6,7 @@ A Telegram bot that transcribes voice messages using ElevenLabs AI.
 
 - Docker and docker compose
 - A VPS with SSH access (for production deployment)
+- sqlite3 (on the VPS host, for the backup script)
 - Telegram bot token (from [@BotFather](https://t.me/BotFather))
 - ElevenLabs API key
 
@@ -16,6 +17,7 @@ git clone <repo-url> ~/otterly
 cd ~/otterly
 cp .env.example .env
 # edit .env and fill in the required values
+mkdir -p data
 docker compose up -d
 ```
 
@@ -43,11 +45,7 @@ All users can use `/start` (optionally with an invite token) and `/help`.
 
 ## Deployment
 
-The project uses GitHub Actions for automatic deployment. On every push to master, the deploy workflow SSHs into the VPS and runs:
-
-```sh
-cd ~/otterly && git pull && docker compose up -d --build
-```
+The project uses GitHub Actions for automatic deployment. After CI passes on a push to master, the deploy workflow SSHs into the VPS, fetches the latest code, checks out the exact commit SHA, and rebuilds.
 
 ### Required GitHub secrets
 
@@ -88,7 +86,7 @@ crontab -e
 Add this line:
 
 ```
-0 3 * * * ~/otterly/scripts/backup.sh /data/otterly.db ~/otterly/backups
+0 3 * * * ~/otterly/scripts/backup.sh ~/otterly/data/otterly.db ~/otterly/backups
 ```
 
 ### Restore from backup

@@ -40,8 +40,10 @@ Build order is intentional: core value first (voice transcription), then auth, t
 
 ## Phase 4 — Deployment
 
-- [ ] Dockerfile (Go binary + ffmpeg, non-root)
-- [ ] docker-compose.yml (bot + SQLite volume)
-- [ ] .env.example with all required variables
-- [ ] README with setup and usage instructions
-- [ ] Nightly SQLite backup script (7-day retention)
+- [x] Dockerfile (multi-stage, Go binary + ffmpeg, non-root)
+- [x] docker-compose.yml (bot + SQLite volume, auto-restart)
+- [x] CI workflow (test + vet on PRs)
+- [x] Deploy workflow (SSH to VPS, docker compose up on merge to master)
+- [x] .env.example with all required variables
+- [x] README with setup and usage instructions
+- [x] Nightly SQLite backup script (7-day retention)
